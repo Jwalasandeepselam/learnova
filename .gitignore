@@ -16,8 +16,9 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-.eggs/
-lib/
+# Python build lib
+backend/**/lib/
+!frontend/lib/
 lib64/
 parts/
 sdist/
