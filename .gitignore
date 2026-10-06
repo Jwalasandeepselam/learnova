@@ -43,6 +43,9 @@ storage/
 data/
 chroma_db/
 
+# Logs
+*.log
+
 # IDE & OS
 .idea/
 .vscode/
