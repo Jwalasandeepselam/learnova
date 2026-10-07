@@ -104,18 +104,28 @@ export const FloatingVoiceButton: React.FC = () => {
     }
   };
 
-  const isIdle = state === 'idle';
+  const getOuterLayerStyles = () => {
+    switch (state) {
+      case 'listening':
+        return 'bg-[#ffffff] text-[#0c0c0c] border-red-600 ring-2 ring-red-600/20 hover:shadow-[0_0_0_3px_#ffffff,0_0_0_6px_#dc2626,0_12px_28px_rgba(220,38,38,0.25)]';
+      case 'speaking':
+        return 'bg-[#ffffff] text-[#0c0c0c] border-[#0c0c0c] ring-2 ring-[#0c0c0c]/10 hover:shadow-[0_0_0_3px_#ffffff,0_0_0_6px_#0c0c0c,0_12px_28px_rgba(0,0,0,0.15)]';
+      case 'processing':
+        return 'bg-[#ffffff] text-[#0c0c0c] border-[#0c0c0c] ring-2 ring-[#0c0c0c]/10 hover:shadow-[0_0_0_3px_#ffffff,0_0_0_6px_#0c0c0c]';
+      case 'error':
+        return 'bg-[#ffffff] text-[#0c0c0c] border-amber-600 ring-2 ring-amber-600/20 hover:shadow-[0_0_0_3px_#ffffff,0_0_0_6px_#d97706]';
+      case 'idle':
+      default:
+        return 'bg-[#0c0c0c] text-[#ffffff] border-[#0c0c0c] hover:bg-[#000000] hover:shadow-[0_0_0_3px_#ffffff,0_0_0_6px_#0c0c0c,0_12px_28px_rgba(0,0,0,0.25)]';
+    }
+  };
 
   return (
     <div className="fixed bottom-6 right-6 z-50 select-none pb-[max(1.5rem,env(safe-area-inset-bottom))] pr-[max(1.5rem,env(safe-area-inset-right))]">
       <button
         onClick={handleClick}
         aria-label="Talk to Learnova AI Voice Assistant"
-        className={`group flex items-center gap-3 px-6 sm:px-8 py-3.5 min-h-[64px] sm:min-h-[76px] rounded-full border transition-all duration-300 shadow-2xl cursor-pointer hover:scale-[1.04] active:scale-[0.98] ${
-          isIdle
-            ? 'bg-[#0c0c0c] text-[#ffffff] border-[#0c0c0c] hover:bg-[#000000]'
-            : 'bg-[#ffffff] text-[#0c0c0c] border-[#0c0c0c] ring-2 ring-[#0c0c0c]/10'
-        }`}
+        className={`group flex items-center gap-3 px-6 sm:px-8 py-3.5 min-h-[64px] sm:min-h-[76px] rounded-full border transition-all duration-300 shadow-2xl cursor-pointer hover:scale-[1.04] active:scale-[0.98] ${getOuterLayerStyles()}`}
       >
         {renderContent()}
       </button>

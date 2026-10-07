@@ -302,15 +302,16 @@ a {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.25s, box-shadow 0.25s;
   text-transform: uppercase;
   font-family: var(--font-display);
   letter-spacing: 0.2px;
 }
 
 .black-btn:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   background: #000000;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c, 0 6px 16px rgba(12, 12, 12, 0.2);
 }
 
 .text-btn {
@@ -744,15 +745,17 @@ a {
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  transition: transform 0.2s, background 0.2s, color 0.2s;
+  transition: transform 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
   font-family: var(--font-display);
   text-transform: uppercase;
 }
 
 .outline-btn:hover,
 .icon-btn:hover {
-  background: #f3f3f3;
+  background: #fafafa;
+  border-color: #0c0c0c;
   transform: translateY(-1px);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
 }
 
 .dark-btn {
@@ -763,6 +766,7 @@ a {
 .dark-btn:hover {
   background: #000000;
   transform: translateY(-1px);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c, 0 4px 12px rgba(12, 12, 12, 0.15);
 }
 
 .icon-btn {
@@ -912,6 +916,7 @@ a {
 .ask button:hover {
   background: #000000;
   transform: scale(1.05);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c !important;
 }
 
 .ask-mic-btn {
@@ -926,13 +931,14 @@ a {
   place-items: center !important;
   cursor: pointer;
   font-size: 16px !important;
-  transition: background 0.2s, transform 0.2s, border-color 0.2s !important;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s, box-shadow 0.2s !important;
 }
 
 .ask-mic-btn:hover {
   background: #f0f0f0 !important;
   border-color: #000000 !important;
   transform: scale(1.08) !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c !important;
 }
 
 .ask-submit-btn {
@@ -949,12 +955,13 @@ a {
   font-weight: 600 !important;
   font-size: 18px !important;
   line-height: 1 !important;
-  transition: background 0.2s, transform 0.2s !important;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s !important;
 }
 
 .ask-submit-btn:hover {
   background: #000000 !important;
   transform: scale(1.06) !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c !important;
 }
 
 .mastery {
@@ -1346,3 +1353,81 @@ a {
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ==========================================================================
+   BUTTON OUTER LAYER ON HOVER (Respective Color System)
+   When cursor is on any button, display a clean outer layer / halo ring
+   calibrated to the button's respective color scheme.
+   ========================================================================== */
+
+button,
+a.black-btn,
+a.outline-btn,
+.black-btn,
+.dark-btn,
+.outline-btn,
+.icon-btn,
+.ask-mic-btn,
+.ask-submit-btn {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.2s ease,
+              border-color 0.2s ease,
+              color 0.2s ease !important;
+}
+
+/* Default / Dark / Black Buttons: Respective Color = Figure Black (#0c0c0c) */
+button:hover:not(:disabled):not(nav button):not([role="tab"]),
+a.black-btn:hover,
+.black-btn:hover,
+.dark-btn:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
+}
+
+/* Outline Buttons: Respective Color = Figure Black (#0c0c0c) */
+.outline-btn:hover,
+a.outline-btn:hover,
+.icon-btn:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
+}
+
+/* Search Bar Input Buttons */
+.ask-mic-btn:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c !important;
+}
+
+.ask-submit-btn:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c !important;
+}
+
+/* Topic and Pack Card Outer Layer */
+.topic:hover {
+  border-color: #0c0c0c !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 3px #cecece;
+}
+
+.topic.active:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
+}
+
+.pack:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
+}
+
+/* Student Mode Buttons */
+.mastery-mode button:hover {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 3px #0c0c0c;
+}
+
+/* Focus Visible State */
+button:focus-visible:not(:disabled) {
+  outline: none;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #0c0c0c;
+}
+
+/* Exclude pure underline navigation tabs */
+nav button:hover,
+.nav a:hover {
+  box-shadow: none !important;
+}
+

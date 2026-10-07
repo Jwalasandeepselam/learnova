@@ -49,7 +49,7 @@ export const ListenButton: React.FC<ListenButtonProps> = ({
       onClick={handleClick}
       type="button"
       title={isCurrentPlaying ? 'Stop reading aloud' : 'Read explanation aloud'}
-      className={`inline-flex items-center font-tech uppercase tracking-wider border rounded-none transition-all cursor-pointer ${
+      className={`inline-flex items-center font-tech uppercase tracking-wider border rounded-none transition-all cursor-pointer hover:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] hover:-translate-y-0.5 ${
         isCurrentPlaying
           ? 'border-[#0c0c0c] bg-[#0c0c0c] text-[#ffffff]'
           : 'border-[#cecece] bg-[#ffffff] text-[#0c0c0c] hover:border-[#0c0c0c] hover:bg-[#fafafa]'

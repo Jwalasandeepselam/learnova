@@ -28,13 +28,13 @@ export const PillButton: React.FC<PillButtonProps> = ({
 
   const variantStyles = {
     primary:
-      'bg-[#0c0c0c] text-[#ffffff] hover:bg-[#262626] active:bg-[#000000] border border-[#0c0c0c]',
+      'bg-[#0c0c0c] text-[#ffffff] hover:bg-[#262626] active:bg-[#000000] border border-[#0c0c0c] hover:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] hover:-translate-y-0.5',
     secondary:
-      'bg-transparent text-[#0c0c0c] border border-[#cecece] hover:border-[#0c0c0c] hover:bg-[#f9f9f9]',
+      'bg-transparent text-[#0c0c0c] border border-[#cecece] hover:border-[#0c0c0c] hover:bg-[#f9f9f9] hover:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] hover:-translate-y-0.5',
     outline:
-      'bg-transparent text-[#0c0c0c] border border-[#0c0c0c] hover:bg-[#0c0c0c] hover:text-[#ffffff]',
+      'bg-transparent text-[#0c0c0c] border border-[#0c0c0c] hover:bg-[#0c0c0c] hover:text-[#ffffff] hover:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#0c0c0c] hover:-translate-y-0.5',
     subtle:
-      'bg-[#f4f4f4] text-[#6d6d6d] hover:text-[#0c0c0c] hover:bg-[#eaeaea] border border-transparent'
+      'bg-[#f4f4f4] text-[#6d6d6d] hover:text-[#0c0c0c] hover:bg-[#eaeaea] border border-transparent hover:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#6d6d6d] focus-visible:shadow-[0_0_0_2px_#ffffff,0_0_0_4px_#6d6d6d]'
   }[variant];
 
   return (
