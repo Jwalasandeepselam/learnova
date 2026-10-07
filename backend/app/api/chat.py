@@ -20,6 +20,7 @@ from backend.app.rag.vector_store import get_vector_store
 from backend.app.rag.embeddings import get_embedding_provider
 from backend.app.rag.retriever import Retriever
 from backend.app.ai.providers import get_llm_manager
+from backend.app.ai.prompts import clean_for_speech
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -135,7 +136,8 @@ async def ask_chat(
         citations=citations,
         grounded=not retrieval_result.insufficient_context and bool(context_chunks),
         is_grounded=not retrieval_result.insufficient_context and bool(context_chunks),
-        confidence=0.92 if context_chunks else 0.50
+        confidence=0.92 if context_chunks else 0.50,
+        speech_text=clean_for_speech(answer_text)
     )
 
     return SuccessEnvelope(data=response_payload)

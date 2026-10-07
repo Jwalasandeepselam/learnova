@@ -4,9 +4,10 @@ Versioned, structured prompt templates implementing the Socratic pedagogical fra
 diagnostic misconception detection, multi-strategy alternative explanations, and Study Pack generation.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import re
 
-PROMPT_VERSION = "2.0.0"
+PROMPT_VERSION = "2.1.0"
 
 # 1. Core Socratic Tutor System Prompt
 TUTOR_SYSTEM_PROMPT = """You are LEARNOVA, an expert academic tutor embodying the Socratic method and cognitive apprenticeship.
@@ -354,3 +355,171 @@ def format_prompt(template: str, **kwargs: Any) -> str:
         for k, v in kwargs.items():
             formatted = formatted.replace(f"{{{k}}}", str(v))
         return formatted
+
+
+# ==============================================================================
+# 8. Voice Assistant & Text-to-Speech (TTS) Pedagogical Prompts
+# ==============================================================================
+
+VOICE_TUTOR_SYSTEM_PROMPT = """You are LEARNOVA, an expert academic voice tutor having a real-time spoken audio conversation with a student.
+You embody the Socratic method, warmth, physical intuition, and cognitive scaffolding.
+
+VOICE & TEXT-TO-SPEECH (TTS) PEDAGOGICAL DIRECTIVES:
+1. Spoken-First Conversational Cadence: Speak in natural, engaging conversational sentences. Never use bullet points, numbered lists, markdown tables, asterisks (**bold**), or raw symbols that sound awkward when read aloud by TTS synthesizers.
+2. Socratic Scaffolding: Deliver one crisp, intuitive idea at a time (2 to 4 sentences). Never lecture continuously. Always conclude with ONE friendly, thought-provoking guiding question to check understanding and invite the student to speak back.
+3. Natural Verbal Formulas: Verbalize mathematical equations in plain spoken English. For example, say "E equals h times nu, where h is Planck's constant and nu is frequency" rather than raw LaTeX symbols.
+4. Conversational Attribution: When referencing course material, cite verbally and naturally (e.g., "From page 4 of your course notes..." or "As mentioned in slide 2...") rather than using raw bracket envelopes.
+5. Strict Grounding: Ground all explanations in the retrieved source excerpts. If a detail is missing, say so politely: "That specific detail isn't in your current material, but here is the general principle."
+6. Empathy for Student Confusion: If the student says "I don't understand" or asks for simple terms, validate their curiosity warmly and switch instantly to an intuitive physical analogy from everyday life.
+
+CURRENT TOPIC CONTEXT:
+{topic_context}
+
+RETRIEVED SOURCE EXCERPTS:
+{retrieved_chunks}
+"""
+
+VOICE_TEACH_ME_PROMPT = """The student asked you out loud: "{user_query}" regarding "{concept_name}".
+
+Respond in a warm, spoken audio dialogue optimized for Text-to-Speech:
+1. Warm Opening: Acknowledge the question with conversational enthusiasm.
+2. First-Principles Intuition: Explain the fundamental physical mechanism in plain, vivid spoken English without academic jargon or bullet points.
+3. Everyday Analogy: Share a relatable daily life analogy that paints an instant mental picture.
+4. Formative Check Question: Conclude with ONE simple, encouraging question asking the student what they think or how they would apply it.
+
+Concept: {concept_name}
+Difficulty: {difficulty_level}
+Source Material Context:
+{retrieved_chunks}
+"""
+
+VOICE_EXPLAIN_AGAIN_PROMPT = """The student is listening to audio and said: "{student_obstacle}" regarding "{concept_name}".
+
+Explain this again using a fresh, spoken conversational approach:
+1. Acknowledge and normalize the difficulty with warmth ("That's a tricky distinction, let's look at it from another angle").
+2. Deliver a completely fresh analogy or concrete real-world story in 2 to 4 spoken sentences.
+3. Keep the language natural, conversational, and rhythmically clear for TTS audio synthesis.
+4. Conclude with a quick, conversational check question to verify if the new perspective clicked.
+
+Concept: {concept_name}
+Student's Obstacle: {student_obstacle}
+Source Material Context:
+{retrieved_chunks}
+"""
+
+
+# ==============================================================================
+# 9. Text-to-Speech (TTS) Cleaning & Normalization Engine
+# ==============================================================================
+
+def clean_for_speech(text: str) -> str:
+    """
+    Format and clean LLM responses for Text-to-Speech (TTS) voice synthesis.
+    Strips raw citation tokens [[Doc:..., Page:...]], markdown headers, bold/italic markers,
+    raw LaTeX commands, ASCII tables/grids, and normalizes pauses for natural conversational audio.
+    """
+    if not text:
+        return ""
+
+    out = text
+
+    # 1. Strip raw citation envelopes: [[Doc:doc_1, Page:4, Chunk:chk_01]]
+    out = re.sub(r"\[\[Doc:[^,]+,\s*Page:[^,]+,\s*Chunk:[^\]]+\]\]", "", out)
+    # Also strip any partial or loose [[...]] tokens
+    out = re.sub(r"\[\[[^\]]+\]\]", "", out)
+
+    # 2. Strip code blocks or format them for speech
+    out = re.sub(r"```[a-zA-Z]*\n?(.*?)\n?```", r"as shown here: \1", out, flags=re.DOTALL)
+    out = re.sub(r"`([^`]+)`", r"\1", out)
+
+    # 3. Strip ASCII table borders and grid lines (e.g., |---|---| or +---+---+)
+    out = re.sub(r"^[|\+\-:= ]{4,}$", "", out, flags=re.MULTILINE)
+    out = re.sub(r"\|\s*:\s*[-]+\s*\|?", "", out)
+    # Strip leading/trailing table pipes
+    out = re.sub(r"^\|\s*|\s*\|$", "", out, flags=re.MULTILINE)
+    out = re.sub(r"\s*\|\s*", ", ", out)
+
+    # 4. Clean Markdown headings (### 1. Title -> Title)
+    out = re.sub(r"^#{1,6}\s*(?:\d+\.\s*)?", "", out, flags=re.MULTILINE)
+
+    # 5. Verbalize mathematical formulas and Greek letters
+    math_replacements = [
+        (r"\\frac\{([^}]+)\}\{([^}]+)\}", r"\1 divided by \2"),
+        (r"\\sqrt\{([^}]+)\}", r"square root of \1"),
+        (r"\\cdot|\\times", " times "),
+        (r"\\approx", " approximately "),
+        (r"\\le|\\leq", " less than or equal to "),
+        (r"\\ge|\\geq", " greater than or equal to "),
+        (r"\\neq", " is not equal to "),
+        (r"\\pm", " plus or minus "),
+        (r"\\nu_0", "nu zero"),
+        (r"\\nu", "nu"),
+        (r"\\lambda", "lambda"),
+        (r"\\mu", "mu"),
+        (r"\\sigma", "sigma"),
+        (r"\\pi", "pi"),
+        (r"\\theta", "theta"),
+        (r"\\alpha", "alpha"),
+        (r"\\beta", "beta"),
+        (r"\\gamma", "gamma"),
+        (r"\\Phi", "work function Phi"),
+        (r"\\phi", "phi"),
+        (r"\\Delta", "change in"),
+        (r"\\infty", "infinity"),
+        (r"K_\{?max\}?", "maximum kinetic energy"),
+        (r"E_\{?photon\}?", "photon energy"),
+        (r"\^2\b", " squared"),
+        (r"\^3\b", " cubed"),
+        (r"\^\{?([a-zA-Z0-9]+)\}?", r" to the power of \1"),
+    ]
+    for pattern, repl in math_replacements:
+        out = re.sub(pattern, repl, out)
+
+    # Strip remaining LaTeX delimiters ($...$ or $$...$$) and backslashes
+    out = re.sub(r"\$\$?([^$]+)\$\$?", r"\1", out)
+    out = re.sub(r"\\[a-zA-Z]+", "", out)
+
+    # 6. Strip Markdown bold, italic, strikethrough
+    out = re.sub(r"\*\*([^*]+)\*\*", r"\1", out)
+    out = re.sub(r"\*([^*]+)\*", r"\1", out)
+    out = re.sub(r"__([^_]+)__", r"\1", out)
+    out = re.sub(r"~~([^~]+)~~", r"\1", out)
+
+    # 7. Clean bullet points and list numbering to spoken cadence
+    out = re.sub(r"^\s*[-*+]\s+", "", out, flags=re.MULTILINE)
+    out = re.sub(r"^\s*\d+\.\s+", "", out, flags=re.MULTILINE)
+
+    # 8. Clean up extra punctuation, brackets, and whitespace
+    out = re.sub(r"[{}\[\]<>]", "", out)
+    # Remove multiple dashes or horizontal rules
+    out = re.sub(r"-{2,}", " ", out)
+    out = re.sub(r"_{2,}", " ", out)
+    # Normalize multiple newlines to double newlines or clean periods
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    out = re.sub(r"[ \t]+", " ", out)
+    out = "\n".join(line.strip() for line in out.splitlines() if line.strip())
+
+    return out.strip()
+
+
+def format_speech_response(text: str, verbalize_citations: bool = False) -> str:
+    """
+    Format response for Voice Assistant Text-to-Speech output.
+    If verbalize_citations is True, replaces [[Doc:..., Page:4, Chunk:...]] with
+    natural conversational attribution (e.g. 'According to page 4...').
+    If False, strips citations cleanly.
+    """
+    if not text:
+        return ""
+
+    if verbalize_citations:
+        def _verbalize(match):
+            page = match.group("page").strip()
+            if page and page.lower() != "none":
+                return f", as noted on page {page}, "
+            return ""
+
+        pattern = r"\[\[Doc:(?P<doc_id>[^,]+),\s*Page:(?P<page>[^,]+),\s*Chunk:(?P<chunk>[^\]]+)\]\]"
+        text = re.sub(pattern, _verbalize, text)
+
+    return clean_for_speech(text)

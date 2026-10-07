@@ -14,14 +14,18 @@ import {
   ExternalLink,
   ShieldCheck,
   X,
-  HelpCircle
+  HelpCircle,
+  Mic
 } from 'lucide-react';
+import { useVoiceAssistant } from '@/lib/voiceContext';
+import { ListenButton } from '@/components/voice/ListenButton';
 
 interface AskAiTabProps {
   document: DocumentItem;
 }
 
 export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
+  const { openAssistant } = useVoiceAssistant();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg_initial',
@@ -167,9 +171,14 @@ export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
                   </Badge>
                 )}
               </div>
-              <span className="text-[11px] font-mono text-[#6d6d6d]">
-                {msg.timestamp}
-              </span>
+              <div className="flex items-center gap-3">
+                {msg.sender !== 'user' && (
+                  <ListenButton text={msg.content} id={msg.id} size="sm" />
+                )}
+                <span className="text-[11px] font-mono text-[#6d6d6d]">
+                  {msg.timestamp}
+                </span>
+              </div>
             </div>
 
             <p className="text-[15px] md:text-[16px] text-[#0c0c0c] leading-relaxed whitespace-pre-line font-sans">
@@ -181,7 +190,7 @@ export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
               <div className="mt-6 pt-4 border-t border-[#cecece] space-y-2">
                 <div className="flex items-center gap-1.5 text-[11px] font-tech uppercase tracking-wider text-[#6d6d6d]">
                   <FileText className="w-3.5 h-3.5 text-[#0c0c0c]" />
-                  <span>GROUNDED CITATION SOURCES (CLICK TO VERIFY):</span>
+                  <span>SOURCES FROM YOUR MATERIAL (CLICK TO VERIFY):</span>
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -218,14 +227,14 @@ export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
             ASK AI QUESTION // GROUNDED SEARCH
           </span>
           <span className="text-[11px] font-tech text-[#6d6d6d]">
-            ANSWERS CONFINED TO THIS DOCUMENT
+            ANSWERS BASED ON YOUR MATERIAL
           </span>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch gap-3">
           <div className="flex-1">
             <UnderlineInput
-              placeholder="e.g. How does the uncertainty principle constrain position and momentum variance?"
+              placeholder="Ask or speak about this material..."
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -239,6 +248,15 @@ export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => openAssistant(document.title, document.id)}
+              title="Speak to Learnova"
+              className="p-2.5 border border-[#0c0c0c] bg-[#ffffff] hover:bg-[#0c0c0c] hover:text-[#ffffff] transition-colors flex items-center justify-center cursor-pointer rounded-none"
+              aria-label="Speak question to Learnova"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
             <PillButton
               variant="primary"
               size="md"
@@ -246,7 +264,7 @@ export const AskAiTab: React.FC<AskAiTabProps> = ({ document }) => {
               disabled={loading || !inputQuery.trim()}
               icon={loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             >
-              QUERY RAG
+              ASK AI
             </PillButton>
           </div>
         </div>

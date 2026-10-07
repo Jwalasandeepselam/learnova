@@ -82,8 +82,85 @@ class RetrievalResult:
         return "\n".join(context_blocks)
 
 
+CONVERSATIONAL_STOPWORDS = {
+    # Articles, pronouns, demonstratives
+    "a", "an", "the", "i", "me", "my", "myself", "we", "our", "ours", "ourselves",
+    "you", "your", "yours", "yourself", "yourselves", "he", "him", "his", "himself",
+    "she", "her", "hers", "herself", "it", "its", "itself", "they", "them", "their",
+    "theirs", "themselves", "this", "that", "these", "those", "what", "which", "who",
+    "whom", "whose", "where", "when", "why", "how",
+    # Prepositions & conjunctions
+    "in", "on", "at", "by", "for", "with", "about", "against", "between", "into",
+    "through", "during", "before", "after", "above", "below", "to", "from", "up",
+    "down", "out", "off", "over", "under", "again", "further", "then", "once",
+    "here", "there", "all", "any", "both", "each", "few", "more", "most", "other",
+    "some", "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
+    "very", "and", "but", "or", "because", "as", "until", "while", "of",
+    # Auxiliary & modal verbs
+    "is", "am", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "having", "do", "does", "did", "doing", "would", "could", "should", "shall",
+    "can", "will", "might", "must",
+    # Colloquial speech / conversational question fillers
+    "explain", "explaining", "explanation", "tell", "telling", "give", "giving",
+    "show", "showing", "teach", "teaching", "understand", "understanding",
+    "mean", "meaning", "means", "please", "simple", "terms", "easy", "simply",
+    "example", "examples", "detail", "details", "help", "like", "just", "want",
+    "know", "see", "think", "wondering", "curious", "talk", "talking", "describe",
+    "describing", "break", "down", "breakdown", "brief", "briefly", "really"
+}
+
+CONVERSATIONAL_PREFIX_PATTERNS = [
+    r"^(?:can|could|would)\s+you\s+(?:please\s+)?(?:explain|tell\s+me\s+about|teach\s+me(?:\s+about)?|break\s+down|walk\s+me\s+through)\s+",
+    r"^(?:what\s+is|what\s+are|what\s+does|what\s+do)\s+",
+    r"^(?:how\s+does|how\s+do|how\s+can|how\s+is)\s+",
+    r"^(?:tell\s+me\s+about|teach\s+me\s+about|explain(?:\s+to\s+me)?)\s+",
+    r"^(?:i\s+don'?t\s+understand\s*,?\s*(?:can\s+you\s+)?(?:give\s+me\s+an?\s+example(?:\s+of)?|explain)?)\s*",
+    r"^(?:give\s+me\s+an?\s+example\s+of)\s+",
+    r"^(?:i\s+want\s+to\s+know\s+about|help\s+me\s+understand)\s+",
+]
+
+CONVERSATIONAL_SUFFIX_PATTERNS = [
+    r"\s+(?:in\s+simple\s+terms|for\s+beginners|simply|in\s+plain\s+english|like\s+i'?m\s+5|please)\s*\??$",
+    r"\s+(?:with\s+an?\s+example|with\s+examples)\s*\??$",
+    r"\s*\?+$",
+]
+
+
+def preprocess_conversational_query(query: str) -> Tuple[str, List[str]]:
+    """
+    Clean conversational speech fillers and colloquial lead-in phrases
+    to extract technical domain keywords for BM25 and keyword retrieval.
+    Returns:
+        (cleaned_query_string, extracted_token_list)
+    """
+    if not query or not query.strip():
+        return "", []
+
+    raw = query.strip()
+    cleaned = raw
+
+    for pattern in CONVERSATIONAL_PREFIX_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+    for pattern in CONVERSATIONAL_SUFFIX_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+    # Tokenize
+    all_tokens = re.findall(r"\b\w{2,}\b", cleaned.lower())
+    filtered = [t for t in all_tokens if t not in CONVERSATIONAL_STOPWORDS]
+
+    # If aggressive filtering stripped everything, fallback gracefully to raw tokens
+    if not filtered:
+        fallback_tokens = re.findall(r"\b\w{2,}\b", raw.lower())
+        minimal_stops = {"a", "an", "the", "is", "in", "to", "of", "and", "or"}
+        filtered = [t for t in fallback_tokens if t not in minimal_stops] or fallback_tokens
+
+    cleaned_str = " ".join(filtered) if filtered else cleaned or raw
+    return cleaned_str, filtered
+
+
 class BM25Index:
-    """Lightweight in-memory BM25 lexical index for document chunks."""
+    """Lightweight in-memory BM25 lexical index with conversational query tolerance."""
 
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
@@ -94,8 +171,12 @@ class BM25Index:
         self.doc_term_freqs: Dict[str, Dict[str, int]] = {}
         self.idf: Dict[str, float] = {}
 
-    def _tokenize(self, text: str) -> List[str]:
-        return re.findall(r"\b\w{2,}\b", text.lower())
+    def _tokenize(self, text: str, filter_stopwords: bool = False) -> List[str]:
+        tokens = re.findall(r"\b\w{2,}\b", text.lower())
+        if filter_stopwords:
+            filtered = [t for t in tokens if t not in CONVERSATIONAL_STOPWORDS]
+            return filtered if filtered else tokens
+        return tokens
 
     def index(self, chunks: List[Dict[str, Any]]) -> None:
         self.doc_count = len(chunks)
@@ -130,7 +211,9 @@ class BM25Index:
             self.idf[term] = math.log(1.0 + (self.doc_count - freq + 0.5) / (freq + 0.5))
 
     def score(self, query: str) -> List[Tuple[str, float]]:
-        query_terms = self._tokenize(query)
+        _, query_terms = preprocess_conversational_query(query)
+        if not query_terms or self.doc_count == 0:
+            query_terms = self._tokenize(query)
         if not query_terms or self.doc_count == 0:
             return []
 
@@ -319,6 +402,14 @@ class Retriever:
 
         all_valid = len(hallucinated_ids) == 0
         return all_valid, valid_ids, hallucinated_ids
+
+    @staticmethod
+    def clean_query(query: str) -> Tuple[str, List[str]]:
+        """
+        Extract core technical domain concepts and tokens from conversational inquiries,
+        filtering spoken fillers and colloquial question prefixes.
+        """
+        return preprocess_conversational_query(query)
 
 
 def get_retriever() -> Retriever:

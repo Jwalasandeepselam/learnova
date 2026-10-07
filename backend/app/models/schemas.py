@@ -245,6 +245,7 @@ class ChatResponse(BaseModel):
     grounded: bool = Field(default=True)
     is_grounded: Optional[bool] = None
     confidence: Optional[float] = None
+    speech_text: Optional[str] = Field(default=None, description="TTS-optimized spoken audio text")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -314,6 +315,7 @@ class TeachResponse(BaseModel):
     real_world_example: Optional[str] = None
     diagnostic_question: Optional[DiagnosticQuestionSchema] = None
     citations: List[CitationSchema] = Field(default_factory=list)
+    speech_text: Optional[str] = Field(default=None, description="TTS-optimized spoken audio text")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -366,6 +368,33 @@ class ExplainAgainResponse(BaseModel):
     key_takeaways: Optional[List[str]] = Field(default_factory=list)
     follow_up_check: Optional[FollowUpCheckSchema] = None
     check_question: Optional[str] = None
+    speech_text: Optional[str] = Field(default=None, description="TTS-optimized spoken audio text")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConverseRequest(BaseModel):
+    """Conversational or voice turn request."""
+
+    user_query: str = Field(..., description="Student spoken or text message")
+    document_id: Optional[str] = Field(default=None, description="Optional target document")
+    session_id: Optional[str] = Field(default=None, description="Active dialogue session ID")
+    voice_mode: bool = Field(default=False, description="Enable Voice/TTS optimization")
+    preferred_difficulty: Optional[str] = Field(default="intermediate")
+
+
+class ConverseResponse(BaseModel):
+    """Conversational response with Socratic dialogue and speech text."""
+
+    session_id: str
+    intent: str
+    topic_name: str
+    pedagogical_mode: str = "socratic"
+    scaffold_explanation: str
+    speech_text: Optional[str] = None
+    diagnostic_question: Optional[DiagnosticQuestionSchema] = None
+    citations: List[CitationSchema] = Field(default_factory=list)
+    voice_mode: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

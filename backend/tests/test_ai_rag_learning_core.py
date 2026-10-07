@@ -35,7 +35,10 @@ from backend.app.ai.prompts import (
     TUTOR_SYSTEM_PROMPT,
     TEACH_ME_PROMPT,
     EXPLAIN_AGAIN_PROMPTS,
-    format_prompt
+    VOICE_TUTOR_SYSTEM_PROMPT,
+    format_prompt,
+    clean_for_speech,
+    format_speech_response,
 )
 from backend.app.ai.tutor import TutorEngine
 from backend.app.ai.analyzer import DocumentAnalyzer
@@ -372,3 +375,115 @@ def test_mastery_tracker_bkt_and_sm2():
         weak_list = tracker.get_weak_topics(student_id, threshold=0.99)
         assert len(weak_list) >= 1
         assert weak_list[0]["topic_id"] == topic_id
+
+
+# ---------------------------------------------------------------------------
+# 9. Conversational Query Preprocessing & Retrieval Tests
+# ---------------------------------------------------------------------------
+def test_conversational_retrieval_and_tts_speech_cleaner():
+    # 1. Query keyword extraction
+    cleaned_svm, tokens_svm = Retriever.clean_query("Can you explain SVM to me in simple terms?")
+    assert "svm" in tokens_svm
+    assert "can" not in tokens_svm
+    assert "explain" not in tokens_svm
+    assert "simple" not in tokens_svm
+
+    cleaned_margin, tokens_margin = Retriever.clean_query("What is margin?")
+    assert "margin" in tokens_margin
+    assert "what" not in tokens_margin
+    assert "is" not in tokens_margin
+
+    # 2. Hybrid Retrieval with conversational query tolerance
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+        db_path = str(Path(tmpdir) / "test_conv_retriever.db")
+        store = VectorStore(db_path=db_path)
+        embedder = LocalEmbeddingProvider(dimension=64)
+
+        doc_id = "doc_ml_svm"
+        chunks = [
+            {
+                "id": "chk_svm_01",
+                "content": "Support Vector Machines (SVM) classify instances by constructing hyperplanes in multidimensional space.",
+                "page_number": 10,
+                "section_title": "SVM Formulation"
+            },
+            {
+                "id": "chk_margin_02",
+                "content": "The margin is the geometric distance between the decision boundary hyperplane and the closest training data points.",
+                "page_number": 12,
+                "section_title": "Margin Definition"
+            }
+        ]
+        store.add_chunks(doc_id, chunks, [embedder.embed_text(c["content"]) for c in chunks])
+        retriever = Retriever(vector_store=store, embedding_provider=embedder)
+
+        res1 = retriever.retrieve(
+            query="Can you explain SVM to me in simple terms?",
+            document_id=doc_id,
+            top_k=2
+        )
+        assert not res1.insufficient_context
+        assert res1.chunks[0]["id"] == "chk_svm_01"
+
+        res2 = retriever.retrieve(
+            query="What is margin?",
+            document_id=doc_id,
+            top_k=2
+        )
+        assert not res2.insufficient_context
+        assert res2.chunks[0]["id"] == "chk_margin_02"
+
+    # 3. TTS speech cleaning
+    raw = (
+        "### 1. Intuition\n"
+        "Energy arrives in discrete **photons** [[Doc:doc_101, Page:4, Chunk:chk_01]].\n"
+        "The relation is $E = h \\nu$, while $\\lambda = \\frac{h}{p}$."
+    )
+    clean = clean_for_speech(raw)
+    assert "[[Doc:" not in clean
+    assert "###" not in clean
+    assert "**photons**" not in clean
+    assert "photons" in clean
+    assert "$" not in clean
+    assert "\\nu" not in clean
+    assert "nu" in clean
+    assert "divided by" in clean
+
+    verbalized = format_speech_response(raw, verbalize_citations=True)
+    assert "page 4" in verbalized
+    assert "[[Doc:" not in verbalized
+
+
+# ---------------------------------------------------------------------------
+# 10. Voice Tutor Engine Conversational Turns
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_voice_tutor_engine_conversation():
+    tutor = TutorEngine()
+
+    # Conversational teaching turn
+    res = await tutor.converse(
+        user_query="Can you explain SVM to me in simple terms?",
+        voice_mode=True
+    )
+    assert "session_id" in res
+    assert res["voice_mode"] is True
+    assert "speech_text" in res
+    assert len(res["speech_text"]) > 20
+    assert "[[Doc:" not in res["speech_text"]
+    assert "**" not in res["speech_text"]
+
+    # Confusion re-explanation turn
+    conf = await tutor.converse(
+        user_query="I don't understand, give me an example",
+        session_id=res["session_id"]
+    )
+    assert conf["intent"] == "explain_again"
+    assert "speech_text" in conf
+
+    # Verify teach_concept and explain_again return speech_text
+    teach = await tutor.teach_concept(topic_name="Support Vector Machines")
+    assert "speech_text" in teach
+
+    again = await tutor.explain_again(concept_name="Margin", desired_modality="analogy")
+    assert "speech_text" in again

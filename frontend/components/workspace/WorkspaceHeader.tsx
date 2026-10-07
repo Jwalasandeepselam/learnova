@@ -22,11 +22,11 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
 }) => {
   const tabs = [
     { id: 'overview' as WorkspaceTab, label: '01 // OVERVIEW & TOPICS', icon: <BookOpen className="w-3.5 h-3.5" /> },
-    { id: 'tutor' as WorkspaceTab, label: '02 // SOCRATIC TUTOR', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
-    { id: 'ask' as WorkspaceTab, label: '03 // ASK AI (RAG)', icon: <MessageSquareQuote className="w-3.5 h-3.5" /> },
+    { id: 'tutor' as WorkspaceTab, label: '02 // AI TUTOR', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
+    { id: 'ask' as WorkspaceTab, label: '03 // ASK AI (YOUR MATERIAL)', icon: <MessageSquareQuote className="w-3.5 h-3.5" /> },
     { id: 'quiz' as WorkspaceTab, label: '04 // QUIZ ARENA', icon: <CheckSquare className="w-3.5 h-3.5" /> },
     { id: 'packs' as WorkspaceTab, label: '05 // STUDY PACKS & PDF', icon: <FileSpreadsheet className="w-3.5 h-3.5" /> },
-    { id: 'mastery' as WorkspaceTab, label: '06 // MASTERY ANALYTICS', icon: <Activity className="w-3.5 h-3.5" /> }
+    { id: 'mastery' as WorkspaceTab, label: '06 // YOUR PROGRESS', icon: <Activity className="w-3.5 h-3.5" /> }
   ];
 
   return (

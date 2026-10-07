@@ -366,7 +366,108 @@ sequenceDiagram
 
 ---
 
-## 7. Technology Stack Summary
+## 7. AI Voice Assistant Architecture & Interaction Lifecycle
+
+To provide an intuitive, hands-free multimodal learning experience, Learnova integrates a lightweight, low-latency AI Voice Assistant directly into the FigureAI interface. The voice assistant is designed to feel like an ambient, attentive academic mentor rather than an intrusive gimmick.
+
+```mermaid
+flowchart LR
+    subgraph ClientVoice ["Client Audio Layer (Web Speech API)"]
+        Mic["Microphone Input"] --> STT["Web Speech STT<br/>(SpeechRecognition)"]
+        STT --> Transcript["Normalized Text<br/>Transcript"]
+        TTS["Web Speech TTS<br/>(SpeechSynthesis)"] --> AudioOut["Audio Output / Spoken Response"]
+    end
+
+    subgraph StateMachine ["Unified State Machine (useVoiceAssistant)"]
+        State["State Coordinator<br/>IDLE | LISTENING | PROCESSING | SPEAKING | ERROR"]
+        DualTrigger["Dual Triggers:<br/>1. Global Floating Dock<br/>2. Inline Input Mic"]
+        DualTrigger <--> State
+    end
+
+    subgraph BackendAPI ["Learnova Backend Gateway"]
+        Transcript --> Router{Intent Router}
+        Router -->|Document Q&A| ChatAPI["/api/chat<br/>(Grounding RAG)"]
+        Router -->|Concept Learning| TutorAPI["/api/tutor/*<br/>(Socratic Scaffolding)"]
+        ChatAPI --> SynthesizedText["Synthesized Academic Response + Citations"]
+        TutorAPI --> SynthesizedText
+    end
+
+    SynthesizedText --> State
+    State --> TTS
+```
+
+### 7.1 Voice Architecture Pipeline
+The voice subsystem adheres to a zero-overhead, privacy-first pipeline:
+1. **Speech-to-Text (STT):** Executed natively on the client device via the W3C Web Speech Recognition API (`SpeechRecognition` / `webkitSpeechRecognition`). This guarantees sub-100ms local streaming transcriptions with zero transmission of raw audio data to third-party cloud transcription providers.
+2. **Contextual Grounding Dispatch:** Transcripts are injected directly into existing Learnova backend pipelines:
+   - In document exploration contexts, transcripts route to `/api/chat`, ensuring responses remain strictly grounded with chunk citations.
+   - In tutoring contexts, transcripts route to `/api/tutor/teach` or `/api/tutor/evaluate-answer`, maintaining the active Socratic state machine.
+3. **Text-to-Speech (TTS):** Responses are converted to natural spoken audio via the native Web Speech Synthesis API (`window.speechSynthesis`). Pitch, cadence, and rate are calibrated for calm, instructional clarity (optimal reading rate: `0.95x` - `1.05x`).
+
+### 7.2 Global Floating Voice Assistant Specifications
+The floating voice assistant acts as a persistent companion across all views (Dashboard, Workspace, Assessment, Study Packs):
+
+| Parameter | Desktop Viewport (>= 768px) | Mobile Viewport (< 768px) |
+| :--- | :--- | :--- |
+| **Position** | Fixed bottom-right: `bottom-8 right-8` (`z-50`) | Fixed bottom-right: `bottom-6 right-6` (`z-50`) |
+| **Dimensions** | `72px - 88px` circular container (`w-20 h-20` / `w-22 h-22`) | `64px - 72px` circular container (`w-16 h-16` / `w-18 h-18`) |
+| **Visual Framing**| Figure Black backdrop (`#0c0c0c`), 1px Calibration Gray border (`#cecece`), sharp backdrop blur | Figure Black backdrop (`#0c0c0c`), 1px Calibration Gray border (`#cecece`) |
+| **HUD Overlay** | Expanding pill-dock with live waveform & transcript | Bottom-sheet drawer with captions and cancel pill |
+
+#### Visual State Machine
+The floating assistant transitions through 6 deterministic visual states:
+1. **`IDLE`:** Quiescent state. Circular black badge with subtle hairline border and glowing central mic icon or pulsing dot.
+2. **`HOVER`:** User intent signal. Expands slightly with a monospace hint tooltip (`"CLICK OR PRESS SPACE TO TALK"`).
+3. **`LISTENING`:** Microphone active. Real-time audio waveform oscillation rings with subtle Signal Green (`#10b981`) status indicator. Audio levels dynamically modulate ring amplitude.
+4. **`PROCESSING`:** Audio speech ended. Ambient 1px rotating perimeter spinner while waiting for the RAG / Socratic API response.
+5. **`SPEAKING`:** AI synthesized playback active. Synchronized audio bars oscillate in Figure Black / Lab White contrast. A subtle "Tap to Stop" pill is displayed.
+6. **`ERROR`:** Hardware/Permission denial or recognition timeout. Precision Crimson (`#ef4444`) border flash accompanied by an accessible error message.
+
+### 7.3 Dual Trigger Integration & Unified State Machine
+To guarantee an ergonomic student workflow, the voice system features a synchronized **Dual Trigger** pattern managed by a singleton React hook (`useVoiceAssistant`):
+
+```
+                     ┌───────────────────────────────────┐
+                     │   useVoiceAssistant (Singleton)   │
+                     │   State: IDLE, LISTENING, etc.    │
+                     └─────────────┬───────────────┬─────┘
+                                   │               │
+        ┌──────────────────────────┴────┐     ┌────┴───────────────────────────┐
+        ▼                               ▼     ▼                                ▼
+┌───────────────────────────────┐               ┌────────────────────────────────┐
+│   Global Floating Dock Mic    │               │   Inline Chat Input Bar Mic    │
+│   (Ambient across all routes) │               │   (Focused within active input)│
+└───────────────────────────────┘               └────────────────────────────────┘
+```
+
+- **Global Floating Dock Trigger:** Designed for ambient hands-free interaction, global navigation, and high-level spoken inquiries.
+- **Inline Text Input Mic Trigger:** Located directly inside the chat / Socratic input bars (`InputMicButton`). Allows students to dictate thoughts directly into the text field for inspection and editing before sending.
+- **Bi-directional Synchronization:** Triggering either button toggles the shared audio controller. Activating speech input automatically pauses any ongoing TTS speech playback across the application.
+
+### 7.4 Audio Lifecycle & Resource Safety
+To prevent common web audio pitfalls such as open-mic background leaks, ghost audio, and browser memory exhaustion:
+1. **Stream Cleanup:** All active `MediaStream` audio tracks are explicitly stopped (`track.stop()`) immediately upon speech end or error.
+2. **Event Unbinding:** Handlers (`onresult`, `onerror`, `onend`, `onspeechend`) are meticulously removed during React component unmount cycles.
+3. **Utterance Cancellation:** Calling `window.speechSynthesis.cancel()` is strictly executed on page navigation, session reset, or user interruption to avoid stacked speech queues.
+4. **Security & Privacy:** No third-party API keys or external audio relays are used on the client. Audio transcription runs within the browser sandbox.
+5. **Accessibility (a11y):** All states announce to screen readers via `aria-live="polite"` regions. Keyboard navigation is fully supported (`Space`/`Enter` to trigger, `Esc` to interrupt).
+
+### 7.5 Student-Friendly UX Taxonomy Mapping
+To prevent cognitive overload and maintain an encouraging educational atmosphere, complex technical jargon is translated into human-centered terminology across the user interface:
+
+| System / Architectural Concept | Student-Friendly UI Label | Pedagogical Rationale |
+| :--- | :--- | :--- |
+| **Grounding RAG** | *"Based on your material"* | Emphasizes that answers originate directly from their uploaded textbook or notes. |
+| **Vector Similarity Match** | *"Verified source excerpt"* | Reassures the student that the information is accurate and traceable. |
+| **Knowledge Graph / Prerequisite DAG** | *"Your learning map"* | Frames topic dependencies as an inviting roadmap rather than an abstract graph. |
+| **Socratic Dialogue Engine** | *"Guided questioning"* / *"Think it through"* | Encourages active problem-solving without feeling interrogative. |
+| **Misconception Diagnostic Classifier** | *"Common learning traps"* / *"Concept check"* | Normalizes mistakes as natural steps in the learning journey. |
+| **Bayesian Knowledge Tracing (BKT)** | *"Mastery readiness"* | Provides a clear sense of progress and confidence. |
+| **SuperMemo SM-2 Spaced Repetition** | *"How well you remember"* / *"Review booster"*| Motivates retention without exposing algorithmic complexity. |
+
+---
+
+## 8. Technology Stack Summary
 
 | Layer | Primary Technology | Version / Specification | Rationale |
 | :--- | :--- | :--- | :--- |
@@ -382,9 +483,10 @@ sequenceDiagram
 
 ---
 
-## 8. Architectural Quality Attributes
+## 9. Architectural Quality Attributes
 
 - **Modularity:** The AI provider is abstracted behind an interface; changing from OpenAI to Anthropic, Google Gemini, or a self-hosted Ollama model requires only updating environment configurations without altering business logic.
 - **Observability:** Structured JSON logging for all API requests, chunk retrieval latency, LLM token consumption, and mastery delta calculations.
 - **Fault Tolerance:** Graceful degradation when external LLMs fail, with automatic retry loops and fallback to lightweight cached summaries.
 - **Portability:** Containerizable via `docker-compose` with distinct `backend` and `frontend` services and volume mounts for persistent data and indices.
+

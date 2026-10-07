@@ -16,7 +16,12 @@ from backend.app.ai.prompts import (
     TEACH_ME_PROMPT,
     EXPLAIN_AGAIN_PROMPTS,
     ANSWER_EVALUATOR_PROMPT,
+    VOICE_TUTOR_SYSTEM_PROMPT,
+    VOICE_TEACH_ME_PROMPT,
+    VOICE_EXPLAIN_AGAIN_PROMPT,
     format_prompt,
+    clean_for_speech,
+    format_speech_response,
 )
 from backend.app.rag.retriever import get_retriever, Retriever, RetrievalResult
 
@@ -129,12 +134,15 @@ class TutorEngine:
             "question": diag_prompt
         })
 
+        speech_text = clean_for_speech(explanation_text)
+
         return {
             "session_id": sid,
             "step_index": session["step_index"],
             "topic_name": topic_name,
             "pedagogical_mode": pedagogical_mode,
             "scaffold_explanation": explanation_text,
+            "speech_text": speech_text,
             "diagnostic_question": {
                 "question_id": diag_id,
                 "question_type": "open_ended",
@@ -204,14 +212,178 @@ class TutorEngine:
             "revised_explanation": revised_text
         })
 
+        speech_text = clean_for_speech(revised_text)
+
         return {
             "session_id": sid,
             "modality_used": modality,
             "revised_explanation": revised_text,
+            "speech_text": speech_text,
             "follow_up_check": {
                 "prompt": follow_up
             },
             "citations": [c.to_dict() for c in retrieval.citations]
+        }
+
+    async def converse(
+        self,
+        user_query: str,
+        document_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        voice_mode: bool = False,
+        preferred_difficulty: str = "intermediate"
+    ) -> Dict[str, Any]:
+        """
+        Handle conversational, colloquial, or spoken student queries smoothly:
+        - "Can you explain SVM to me in simple terms?"
+        - "What is margin?"
+        - "I don't understand, give me an example"
+        Automatically resolves intent, retrieves grounded source material,
+        and provides Socratic dialogue formatted for either Text UI or Voice TTS.
+        """
+        sid = self._get_or_create_session(session_id, "Conversational Inquiry", document_id)
+        session = self._sessions[sid]
+        q_lower = (user_query or "").strip().lower()
+
+        # 1. Check if user is asking for re-explanation / expressing confusion
+        is_confusion = any(phrase in q_lower for phrase in [
+            "don't understand", "dont understand", "still confused", "not clear",
+            "give me an example", "give an example", "another example", "explain again",
+            "simpler", "in simple terms", "eli5"
+        ])
+
+        if is_confusion:
+            # Determine appropriate modality
+            modality = "simple"
+            if "example" in q_lower:
+                modality = "real_world"
+            elif "analogy" in q_lower:
+                modality = "analogy"
+            elif "step" in q_lower:
+                modality = "step_by_step"
+
+            concept = session.get("topic_name") or "Core Principle"
+            if concept == "Conversational Inquiry":
+                cleaned_kw, tokens = self.retriever.clean_query(user_query)
+                concept = cleaned_kw or "Fundamental Principle"
+
+            result = await self.explain_again(
+                concept_name=concept,
+                desired_modality=modality,
+                student_obstacle=user_query,
+                session_id=sid,
+                document_id=document_id
+            )
+            return {
+                "session_id": sid,
+                "intent": "explain_again",
+                "topic_name": concept,
+                "scaffold_explanation": result.get("revised_explanation", ""),
+                "speech_text": result.get("speech_text", clean_for_speech(result.get("revised_explanation", ""))),
+                "diagnostic_question": {
+                    "question_id": f"q_diag_{uuid.uuid4().hex[:8]}",
+                    "question_type": "open_ended",
+                    "prompt": result.get("follow_up_check", {}).get("prompt", "How does this make things clearer?"),
+                    "hints": []
+                },
+                "citations": result.get("citations", []),
+                "voice_mode": voice_mode
+            }
+
+        # 2. General concept inquiry / teaching turn
+        cleaned_kw, tokens = self.retriever.clean_query(user_query)
+        concept = cleaned_kw or user_query.strip("?., ") or "Core Principles"
+        session["topic_name"] = concept
+        session["step_index"] += 1
+
+        # Retrieve source grounding
+        retrieval: RetrievalResult = self.retriever.retrieve(
+            query=f"{concept} {user_query}",
+            document_id=document_id,
+            top_k=4
+        )
+        context_str = retrieval.get_grounding_context()
+
+        if voice_mode:
+            system_inst = format_prompt(
+                VOICE_TUTOR_SYSTEM_PROMPT,
+                topic_context=f"Topic: {concept} | Mode: voice_socratic | Difficulty: {preferred_difficulty}",
+                retrieved_chunks=context_str
+            )
+            user_prompt = format_prompt(
+                VOICE_TEACH_ME_PROMPT,
+                concept_name=concept,
+                user_query=user_query,
+                difficulty_level=preferred_difficulty,
+                retrieved_chunks=context_str
+            )
+            response = await self.llm.generate(
+                prompt=user_prompt,
+                system_instruction=system_inst,
+                json_mode=False,
+                temperature=0.25
+            )
+            explanation_text = response.content
+            speech_text = format_speech_response(explanation_text, verbalize_citations=True)
+        else:
+            system_inst = format_prompt(
+                TUTOR_SYSTEM_PROMPT,
+                topic_context=f"Topic: {concept} | Mode: socratic | Difficulty: {preferred_difficulty}",
+                retrieved_chunks=context_str
+            )
+            user_prompt = format_prompt(
+                TEACH_ME_PROMPT,
+                concept_name=concept,
+                difficulty_level=preferred_difficulty,
+                retrieved_chunks=context_str
+            )
+            response = await self.llm.generate(
+                prompt=user_prompt,
+                system_instruction=system_inst,
+                json_mode=False,
+                temperature=0.25
+            )
+            explanation_text = response.content
+            speech_text = clean_for_speech(explanation_text)
+
+        diag_id = f"q_diag_{uuid.uuid4().hex[:8]}"
+        diag_prompt = "What do you think is the key condition or threshold required for this to work?"
+        q_match = re.search(r"(?:Check Question|Question):\s*(.+?)(?=\n\n|\Z)", explanation_text, re.DOTALL | re.IGNORECASE)
+        if q_match:
+            diag_prompt = q_match.group(1).strip()
+
+        session["current_question"] = {
+            "question_id": diag_id,
+            "prompt": diag_prompt,
+            "hints": ["Focus on the underlying physical mechanism."]
+        }
+
+        session["history"].append({
+            "step": session["step_index"],
+            "role": "assistant",
+            "mode": "voice_socratic" if voice_mode else "socratic",
+            "explanation": explanation_text,
+            "question": diag_prompt
+        })
+
+        return {
+            "session_id": sid,
+            "step_index": session["step_index"],
+            "intent": "teach_concept",
+            "topic_name": concept,
+            "pedagogical_mode": "voice_socratic" if voice_mode else "socratic",
+            "scaffold_explanation": explanation_text,
+            "speech_text": speech_text,
+            "diagnostic_question": {
+                "question_id": diag_id,
+                "question_type": "open_ended",
+                "prompt": diag_prompt,
+                "hints": ["Focus on the underlying physical mechanism."]
+            },
+            "citations": [c.to_dict() for c in retrieval.citations],
+            "insufficient_context": retrieval.insufficient_context,
+            "warning": retrieval.warning_message,
+            "voice_mode": voice_mode
         }
 
     async def evaluate_answer(

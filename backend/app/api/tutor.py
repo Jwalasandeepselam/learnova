@@ -24,6 +24,8 @@ from backend.app.models.schemas import (
     ExplainAgainResponse,
     EvaluateAnswerRequest,
     EvaluateAnswerResponse,
+    ConverseRequest,
+    ConverseResponse,
     DiagnosticQuestionSchema,
     FollowUpCheckSchema,
     MisconceptionSchema,
@@ -141,7 +143,8 @@ async def teach_concept(
         analogy=analogy,
         real_world_example=real_world,
         diagnostic_question=diagnostic_schema,
-        citations=citations
+        citations=citations,
+        speech_text=result.get("speech_text")
     )
 
     return SuccessEnvelope(data=payload)
@@ -197,7 +200,8 @@ async def explain_again(
         modality_used=result.get("modality_used", mapped_modality),
         revised_explanation=result.get("revised_explanation", ""),
         topic=concept_name,
-        follow_up_check=follow_up_schema
+        follow_up_check=follow_up_schema,
+        speech_text=result.get("speech_text")
     )
 
     return SuccessEnvelope(data=payload)
@@ -270,6 +274,85 @@ async def evaluate_answer(
         scaffolded_hint=eval_result.get("scaffolded_hint", "Consider the discrete relationship between energy and frequency."),
         mastery_delta=mastery_delta,
         next_action=eval_result.get("next_action", "PROCEED" if is_correct else "PROVIDE_HINT")
+    )
+
+    return SuccessEnvelope(data=payload)
+
+
+@router.post(
+    "/converse",
+    response_model=SuccessEnvelope[ConverseResponse],
+    summary="Conversational and voice Socratic inquiry"
+)
+async def converse(
+    req: ConverseRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle natural spoken or conversational queries:
+    - 'Can you explain SVM to me in simple terms?'
+    - 'What is margin?'
+    - 'I don't understand, give me an example'
+    Outputs Socratic guidance with speech_text optimized for Text-to-Speech (TTS).
+    """
+    sess_repo = LearningSessionRepository(db)
+    tutor = get_tutor_engine()
+
+    result = await tutor.converse(
+        user_query=req.user_query,
+        document_id=req.document_id,
+        session_id=req.session_id,
+        voice_mode=req.voice_mode,
+        preferred_difficulty=req.preferred_difficulty or "intermediate"
+    )
+
+    sid = result.get("session_id", req.session_id or f"sess_{uuid.uuid4().hex[:12]}")
+    dq = result.get("diagnostic_question", {})
+    diagnostic_schema = DiagnosticQuestionSchema(
+        question_id=dq.get("question_id", f"q_diag_{uuid.uuid4().hex[:8]}"),
+        question_type=dq.get("question_type", "open_ended"),
+        prompt=dq.get("prompt", "What do you think is the key takeaway?"),
+        hints=dq.get("hints", [])
+    ) if dq else None
+
+    citations = [
+        CitationSchema(
+            citation_id=f"cite_{c.get('chunk_id')}",
+            document_id=c.get("document_id", req.document_id or "unknown"),
+            page_number=c.get("page_number", 1),
+            chunk_id=c.get("chunk_id"),
+            snippet=c.get("snippet", ""),
+            relevance_score=c.get("relevance_score", 0.9)
+        )
+        for c in result.get("citations", [])
+    ]
+
+    try:
+        sess = sess_repo.get_by_id(sid)
+        if not sess and req.document_id:
+            sess_repo.create(
+                document_id=req.document_id,
+                student_id="usr_figure_01",
+                session_id=sid,
+                topic_id=None,
+                current_topic=result.get("topic_name", "Conversational Inquiry"),
+                session_mode="VOICE_SOCRATIC" if req.voice_mode else "SOCRATIC"
+            )
+        sess_repo.append_message(sid, role="user", content=req.user_query)
+        sess_repo.append_message(sid, role="assistant", content=result.get("scaffold_explanation", ""))
+    except Exception as e:
+        logger.warning("Could not persist converse session: %s", e)
+
+    payload = ConverseResponse(
+        session_id=sid,
+        intent=result.get("intent", "teach_concept"),
+        topic_name=result.get("topic_name", "Conversational Inquiry"),
+        pedagogical_mode=result.get("pedagogical_mode", "voice_socratic" if req.voice_mode else "socratic"),
+        scaffold_explanation=result.get("scaffold_explanation", ""),
+        speech_text=result.get("speech_text"),
+        diagnostic_question=diagnostic_schema,
+        citations=citations,
+        voice_mode=req.voice_mode
     )
 
     return SuccessEnvelope(data=payload)

@@ -64,7 +64,7 @@ export const MasteryTab: React.FC<MasteryTabProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-mono tracking-widest uppercase text-[#6d6d6d]">
-                BAYESIAN KNOWLEDGE TRACING // RETENTION MODEL
+                LEARNING PROGRESS // HOW WELL YOU REMEMBER
               </span>
             </div>
             <h2 className="text-[22px] font-bold tracking-tight text-[#0c0c0c] font-tech uppercase mt-1">
@@ -80,13 +80,13 @@ export const MasteryTab: React.FC<MasteryTabProps> = ({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-2">
           <div>
             <span className="text-[11px] font-tech text-[#6d6d6d] uppercase block">
-              AVG RETENTION INDEX
+              HOW WELL YOU REMEMBER
             </span>
             <span className="text-[36px] font-bold font-tech text-[#0c0c0c] leading-none">
               {avgMastery}%
             </span>
             <span className="text-[11px] text-[#6d6d6d] block mt-1">
-              Ebbinghaus Decay Calibrated
+              Memory Strength Calibrated
             </span>
           </div>
 
@@ -134,12 +134,12 @@ export const MasteryTab: React.FC<MasteryTabProps> = ({
           <div className="flex items-center gap-2 mb-2 text-[#c5221f]">
             <AlertTriangle className="w-5 h-5" />
             <h3 className="text-[16px] font-bold font-tech uppercase tracking-wide">
-              RETENTION DECAY WARNING // IMMEDIATE REMEDIATION RECOMMENDED
+              CONCEPTS NEEDING REVIEW // BOOST YOUR RETENTION
             </h3>
           </div>
           <p className="text-[13px] text-[#6d6d6d] mb-6">
-            The following concepts exhibit high slip probabilities or unreinforced memory traces.
-            Engaging the Socratic Tutor now will prevent catastrophic forgetting.
+            The following concepts are due for review.
+            Practicing with the AI Tutor now will help lock them into your long-term memory.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

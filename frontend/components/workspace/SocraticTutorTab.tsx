@@ -17,8 +17,11 @@ import {
   BookOpen,
   Send,
   Loader2,
-  Bookmark
+  Bookmark,
+  Mic
 } from 'lucide-react';
+import { useVoiceAssistant } from '@/lib/voiceContext';
+import { ListenButton } from '@/components/voice/ListenButton';
 
 interface SocraticTutorTabProps {
   document: DocumentItem;
@@ -44,6 +47,7 @@ export const SocraticTutorTab: React.FC<SocraticTutorTabProps> = ({
   document,
   initialTopic
 }) => {
+  const { openAssistant } = useVoiceAssistant();
   const [currentTopic, setCurrentTopic] = useState(
     initialTopic || document.topics?.[0]?.name || 'Wave-Particle Duality & de Broglie Relation'
   );
@@ -286,6 +290,10 @@ export const SocraticTutorTab: React.FC<SocraticTutorTabProps> = ({
               {step.content}
             </p>
 
+            <div className="mt-2.5 mb-2">
+              <ListenButton text={step.content} id={`socratic-step-${step.id}`} />
+            </div>
+
             {/* Diagnostic Formative Question */}
             {step.diagnosticQuestion && (
               <div className="mt-6 p-6 border border-[#0c0c0c] bg-[#fafafa] space-y-4">
@@ -395,6 +403,15 @@ export const SocraticTutorTab: React.FC<SocraticTutorTabProps> = ({
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => openAssistant(currentTopic, document.id)}
+              className="px-4 py-2.5 border border-[#0c0c0c] bg-[#ffffff] hover:bg-[#fafafa] text-[#0c0c0c] font-tech text-[13px] uppercase inline-flex items-center gap-1.5 cursor-pointer rounded-full transition-colors"
+              title="Speak with Learnova voice assistant"
+            >
+              <Mic className="w-3.5 h-3.5" />
+              <span>Speak</span>
+            </button>
             <PillButton
               variant="primary"
               size="md"

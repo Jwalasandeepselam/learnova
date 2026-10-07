@@ -58,8 +58,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 }
 
-// In-memory state for mock sessions during local frontend testing
-const clientDocs: DocumentItem[] = [...MOCK_DOCUMENTS];
+// In-memory state for user-uploaded sessions (starts empty)
+const clientDocs: DocumentItem[] = [];
 
 export const learnovaApi = {
   // Document Operations
@@ -71,8 +71,8 @@ export const learnovaApi = {
         `/api/documents?${query.toString()}`
       );
       return {
-        items: res.items,
-        total: res.pagination?.total_items ?? res.items.length
+        items: res.items || [],
+        total: res.pagination?.total_items ?? (res.items?.length || 0)
       };
     } catch {
       let filtered = clientDocs;
@@ -86,14 +86,12 @@ export const learnovaApi = {
     }
   },
 
-  async getDocument(id: string): Promise<DocumentItem> {
+  async getDocument(id: string): Promise<DocumentItem | null> {
     try {
       return await request<DocumentItem>(`/api/documents/${id}`);
     } catch {
       const found = clientDocs.find(d => d.id === id);
-      if (found) return found;
-      // Default to quantum if not found
-      return clientDocs[0];
+      return found || null;
     }
   },
 
@@ -467,7 +465,21 @@ export const learnovaApi = {
     try {
       return await request<StudentProgress>('/api/student/progress');
     } catch {
-      return MOCK_PROGRESS;
+      return {
+        student_id: 'usr_default',
+        total_documents_studied: clientDocs.length,
+        total_learning_time_minutes: clientDocs.length * 15,
+        current_streak_days: clientDocs.length > 0 ? 1 : 0,
+        total_quizzes_completed: 0,
+        average_quiz_score: 0,
+        mastery_distribution: {
+          novice: 0,
+          learning: clientDocs.length,
+          proficient: 0,
+          mastered: 0
+        },
+        upcoming_reviews_count: 0
+      };
     }
   },
 
@@ -475,12 +487,19 @@ export const learnovaApi = {
     try {
       const query = documentId ? `?document_id=${documentId}` : '';
       const res = await request<{ topics: TopicMastery[] }>(`/api/student/mastery${query}`);
-      return res.topics;
+      return res.topics || [];
     } catch {
-      if (documentId) {
-        return MOCK_TOPIC_MASTERY.filter(t => t.document_id === documentId);
-      }
-      return MOCK_TOPIC_MASTERY;
+      if (clientDocs.length === 0) return [];
+      const doc = documentId ? clientDocs.find(d => d.id === documentId) : clientDocs[0];
+      if (!doc || !doc.topics) return [];
+      return doc.topics.map(t => ({
+        topic_id: t.id,
+        topic_name: t.name,
+        document_id: doc.id,
+        mastery_score: t.mastery_score || 0.5,
+        confidence_level: 'MODERATE',
+        status: (t.mastery_score || 0.5) > 0.8 ? 'MASTERED' : 'LEARNING'
+      }));
     }
   }
 };

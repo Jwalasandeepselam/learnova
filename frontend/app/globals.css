@@ -906,12 +906,55 @@ a {
   font-weight: 600;
   font-size: 18px;
   line-height: 1;
-  transition: background 0.2s, transform 0.2s;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
 }
 
 .ask button:hover {
   background: #000000;
   transform: scale(1.05);
+}
+
+.ask-mic-btn {
+  appearance: none;
+  border: 1px solid #0c0c0c !important;
+  background: #ffffff !important;
+  color: #0c0c0c !important;
+  border-radius: 50% !important;
+  width: 38px !important;
+  height: 38px !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer;
+  font-size: 16px !important;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s !important;
+}
+
+.ask-mic-btn:hover {
+  background: #f0f0f0 !important;
+  border-color: #000000 !important;
+  transform: scale(1.08) !important;
+}
+
+.ask-submit-btn {
+  appearance: none;
+  border: 1px solid #0c0c0c !important;
+  background: #0c0c0c !important;
+  color: #ffffff !important;
+  border-radius: 50% !important;
+  width: 38px !important;
+  height: 38px !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer;
+  font-weight: 600 !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  transition: background 0.2s, transform 0.2s !important;
+}
+
+.ask-submit-btn:hover {
+  background: #000000 !important;
+  transform: scale(1.06) !important;
 }
 
 .mastery {

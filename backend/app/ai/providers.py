@@ -314,6 +314,29 @@ class LocalFallbackProvider(LLMProvider):
             }, indent=2)
 
         # 2. Plain Text Pedagogical Modes
+        # Voice / Spoken Pedagogical Mode (Optimized for TTS audio synthesis)
+        if "voice" in sys_lower or "text-to-speech" in sys_lower or "spoken audio" in sys_lower or "out loud" in prompt_lower:
+            concept_match = re.search(r'(?:concept|topic|regarding):\s*"??([^"\n\.]+)"??', prompt, re.IGNORECASE)
+            concept = concept_match.group(1).strip() if concept_match else "this concept"
+            if "obstacle" in prompt_lower or "don't understand" in prompt_lower or "example" in prompt_lower:
+                return (
+                    f"I completely understand, {concept} can feel abstract at first. "
+                    "Think of it like trying to knock a heavy coconut off a stand at a carnival. "
+                    "You need a single solid baseball with enough speed to knock it down. "
+                    "Tossing hundreds of tiny ping-pong balls won't budge the coconut, no matter how many you throw at once. "
+                    "Here, each baseball is an individual energy packet, and the coconut needs that single punch to break free. "
+                    "Does that picture make the difference between energy and intensity feel clearer?"
+                )
+            return (
+                f"Great question! Let's explore {concept} starting from first principles. "
+                "Instead of thinking of energy as a smooth flowing stream like water from a hose, "
+                "imagine it arrives in tiny, indivisible packets called quanta. "
+                "Each packet carries a specific amount of punch. When an incoming packet collides with an electron, "
+                "it must have enough energy on its own to free it immediately. "
+                "If you send photons below that required threshold, no electrons are ever released. "
+                "What do you think would happen if we turned up the brightness using the exact same low-energy packets?"
+            )
+
         # Teach Me / Socratic Dialogue Mode
         if "teach" in prompt_lower or "socratic" in sys_lower:
             return (

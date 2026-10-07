@@ -125,6 +125,19 @@ def test_full_learning_lifecycle_e2e():
         again_data = unwrap(again_resp)
         assert again_data["modality_used"] == "analogy"
         assert len(again_data["revised_explanation"]) > 15
+        assert "speech_text" in again_data
+
+        # 4b. Conversational & Voice Socratic Inquiry
+        conv_resp = client.post("/api/tutor/converse", json={
+            "document_id": doc_id,
+            "user_query": "Can you explain SVM to me in simple terms?",
+            "voice_mode": True
+        })
+        assert conv_resp.status_code == 200
+        conv_data = unwrap(conv_resp)
+        assert "speech_text" in conv_data
+        assert conv_data["voice_mode"] is True
+        assert len(conv_data["speech_text"]) > 20
 
         # 5. Formative Answer Evaluation & Misconception Diagnosis
         eval_payload = {

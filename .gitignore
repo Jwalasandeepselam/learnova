@@ -39,6 +39,9 @@ out/
 # Database & Storage
 *.sqlite
 *.sqlite3
+*.db
+*.db-*
+learnova.db*
 storage/
 data/
 chroma_db/
