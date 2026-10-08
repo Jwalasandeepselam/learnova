@@ -57,6 +57,10 @@ Production must use HTTPS and `COOKIE_SECURE=true`. Do not commit `backend/.env`
 
 Learnova includes a Supabase Auth, Postgres, pgvector, RLS, and private Storage migration at [`supabase/migrations/20261008172230_learnova_production_schema.sql`](supabase/migrations/20261008172230_learnova_production_schema.sql). The browser uses Supabase email/password sessions, including confirmation and password-reset routes; the FastAPI API validates the bearer token before it reaches learning data. Follow [the production setup guide](docs/supabase-production.md) to configure keys, Auth redirect URLs, RLS-backed Storage, migrations, and a safe SQLite cutover.
 
+## Railway API deployment
+
+The repository root contains a production [`Dockerfile`](Dockerfile) and [`railway.toml`](railway.toml). Deploy the repository root to Railway, then configure `ENVIRONMENT=production`, `COOKIE_SECURE=true`, `CORS_ORIGINS`, Gemini, and the server-only Supabase variables from `.env.example`. Point Vercel's `API_INTERNAL_URL` at the resulting Railway HTTPS URL, and set the two `NEXT_PUBLIC_SUPABASE_*` variables in Vercel before redeploying the frontend.
+
 ## Source-grounding guarantees
 
 Learnova stores source locations beside extracted chunks. Tutor and quiz calls retrieve only chunks belonging to the active account and session. A model output is rejected when it does not cite an actual retrieved chunk.
