@@ -1,7 +1,7 @@
 """Learnova document ingestion and chunking package."""
 
-from app.ingestion.chunker import DocumentChunk, SemanticChunker
-from app.ingestion.parsers import (
+from .chunker import DocumentChunk, SemanticChunker
+from .parsers import (
     DocumentPage,
     DocumentParser,
     DocumentSection,

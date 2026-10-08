@@ -1,100 +1,83 @@
-"""Application configuration settings for Learnova.
-
-Loads environment variables from backend/.env and ensures required storage directories exist.
-"""
-
+"""Single configuration source. Paths resolve against the repository, not the shell."""
 from functools import lru_cache
-import json
 from pathlib import Path
-from typing import List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+BACKEND_DIR = ROOT_DIR / "backend"
+
 
 class Settings(BaseSettings):
-    """Application runtime settings configured via environment variables."""
-
-    # Server configuration
     ENVIRONMENT: str = "development"
+    HOST: str = "127.0.0.1"
     PORT: int = 8000
-    HOST: str = "0.0.0.0"
-    CORS_ORIGINS: Union[List[str], str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-
-    # Database & Storage
-    DATABASE_URL: str = "sqlite:///./learnova.db"
-    STORAGE_DIR: str = "./storage"
-    CHROMA_PERSIST_DIR: str = "./storage/chroma_db"
-
-    # AI Model Providers
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    STORAGE_DIR: str = str(ROOT_DIR / "storage")
+    LEARNING_DB_PATH: str = str(ROOT_DIR / "storage" / "learning.db")
+    DATABASE_URL: str = "sqlite:///" + str(ROOT_DIR / "learnova.db").replace("\\", "/")
+    VECTOR_STORE_DIR: str = str(ROOT_DIR / "storage" / "vector_store")
+    CHROMA_PERSIST_DIR: str = str(ROOT_DIR / "storage" / "chroma_db")
     DEFAULT_LLM_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
-
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
+    GEMINI_LIVE_MODEL: str = "gemini-3.8-live"
+    AI_EMBEDDING_PROVIDER: str = "local"
+    LOCAL_EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
-
-    LOCAL_EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    MAX_UPLOAD_MB: int = 20
+    COOKIE_SECURE: bool = False
+    SESSION_TTL_DAYS: int = 7
 
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).resolve().parent.parent / ".env"),
-        env_file_encoding="utf-8",
-        extra="ignore",
+        env_file=(str(ROOT_DIR / ".env"), str(BACKEND_DIR / ".env")),
+        env_file_encoding="utf-8", extra="ignore",
     )
 
-    @field_validator("CORS_ORIGINS", mode="before")
+    @field_validator("STORAGE_DIR", "LEARNING_DB_PATH", "VECTOR_STORE_DIR", "CHROMA_PERSIST_DIR")
     @classmethod
-    def parse_cors_origins(cls, value: Union[str, List[str]]) -> List[str]:
-        """Parse JSON or comma-separated string representation of CORS_ORIGINS."""
-        if isinstance(value, str):
-            value = value.strip()
-            if value.startswith("[") and value.endswith("]"):
-                try:
-                    parsed = json.loads(value)
-                    if isinstance(parsed, list):
-                        return [str(origin).strip() for origin in parsed]
-                except json.JSONDecodeError:
-                    pass
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
-        return value
+    def absolute_path(cls, value: str) -> str:
+        path = Path(value)
+        return str(path if path.is_absolute() else (ROOT_DIR / path).resolve())
 
     @property
     def storage_path(self) -> Path:
-        """Absolute or relative Path object for STORAGE_DIR."""
-        return Path(self.STORAGE_DIR).resolve()
+        return Path(self.STORAGE_DIR)
 
     @property
     def uploads_dir(self) -> Path:
-        """Path for raw uploaded files."""
         return self.storage_path / "uploads"
 
     @property
     def study_packs_dir(self) -> Path:
-        """Path for generated study packs (PDFs and JSON)."""
         return self.storage_path / "study_packs"
 
     @property
     def chroma_dir(self) -> Path:
-        """Path for Chroma vector database storage."""
-        return Path(self.CHROMA_PERSIST_DIR).resolve()
+        return Path(self.CHROMA_PERSIST_DIR)
+
+    @property
+    def UPLOADS_DIR(self) -> str:
+        return str(self.uploads_dir)
+
+    @property
+    def STUDY_PACKS_DIR(self) -> str:
+        return str(self.study_packs_dir)
 
     def ensure_directories(self) -> None:
-        """Ensure all required local storage directories exist."""
-        self.uploads_dir.mkdir(parents=True, exist_ok=True)
-        self.study_packs_dir.mkdir(parents=True, exist_ok=True)
-        self.chroma_dir.mkdir(parents=True, exist_ok=True)
+        for path in (self.uploads_dir, self.study_packs_dir, Path(self.VECTOR_STORE_DIR), Path(self.LEARNING_DB_PATH).parent):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def init_directories(self) -> None:
+        self.ensure_directories()
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
-    """Retrieve cached application settings instance and ensure directory tree."""
-    app_settings = Settings()
-    app_settings.ensure_directories()
-    return app_settings
+    return Settings()
 
 
-# Global settings singleton
 settings = get_settings()

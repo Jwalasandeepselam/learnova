@@ -83,23 +83,16 @@ class DocumentParser:
 
         if suffix == ".pdf":
             return cls._parse_pdf(data, original_filename)
-        elif suffix in (".docx", ".doc"):
+        elif suffix == ".docx":
             return cls._parse_docx(data, original_filename)
-        elif suffix in (".pptx", ".ppt"):
+        elif suffix == ".pptx":
             return cls._parse_pptx(data, original_filename)
         elif suffix in (".txt", ".md", ".markdown", ".rst"):
             return cls._parse_text(data, original_filename)
+        elif suffix in (".doc", ".ppt"):
+            raise ValueError("Export this legacy Office file as DOCX, PPTX, or PDF and upload it again.")
         else:
-            # Fallback based on content sniffing or treat as plain text
-            if data.startswith(b"%PDF"):
-                return cls._parse_pdf(data, original_filename)
-            elif data.startswith(b"PK\x03\x04"):
-                # Could be docx or pptx zip container
-                try:
-                    return cls._parse_docx(data, original_filename)
-                except Exception:
-                    return cls._parse_pptx(data, original_filename)
-            return cls._parse_text(data, original_filename)
+            raise ValueError("Unsupported file. Upload PDF, DOCX, PPTX, TXT, or Markdown.")
 
     # --------------------------------------------------------------------------
     # PDF Parsing
@@ -260,6 +253,12 @@ class DocumentParser:
                 current_page_paragraphs = []
                 words_on_current_page = 0
 
+        # Preserve table values, which often contain the source definitions and formulas.
+        for table in doc.tables:
+            rows = [" | ".join(cell.text.strip() for cell in row.cells) for row in table.rows]
+            if any(row.strip(" |") for row in rows):
+                current_page_paragraphs.append("\n".join(rows))
+
         # Flush remaining content
         if current_page_paragraphs:
             p_text = "\n\n".join(current_page_paragraphs)
@@ -291,7 +290,7 @@ class DocumentParser:
             pages=pages,
             raw_text=raw_text,
             word_count=len(raw_text.split()),
-            metadata={"parser": "python-docx"},
+            metadata={"parser": "python-docx", "location_kind": "text_segment", "page_numbers_are_estimates": True},
         )
 
     # --------------------------------------------------------------------------
@@ -319,6 +318,9 @@ class DocumentParser:
                     slide_title = title_text
 
             for shape in slide.shapes:
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        slide_texts.append(" | ".join(cell.text.strip() for cell in row.cells))
                 if shape != slide.shapes.title and shape.has_text_frame:
                     for paragraph in shape.text_frame.paragraphs:
                         p_text = paragraph.text.strip()

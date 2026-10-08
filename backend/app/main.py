@@ -1,188 +1,90 @@
-"""Learnova FastAPI Application Entrypoint.
-
-Initializes configuration, database schema, CORS policies, standard error envelopes,
-and modular REST API routers according to ARCHITECTURE.md and API.md.
-"""
-
+"""Learnova application. Only authenticated, source-grounded v2 routes are served."""
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import logging
+import time
 import uuid
-import sys
-from pathlib import Path
 
-# Ensure backend root is on sys.path
-backend_dir = Path(__file__).resolve().parent.parent
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
-
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-try:
-    from backend.app.config import get_settings
-    from backend.app.models.database import init_db
-    from backend.app.models.schemas import ErrorDetail, ErrorResponse, MetaSchema
-except ImportError:
-    from app.config import get_settings
-    from app.models.database import init_db
-    from app.models.schemas import ErrorDetail, ErrorResponse, MetaSchema
+from backend.app.config import settings
+from backend.app.learning.router import router as learning_router
+from backend.app.learning.service import initialize
+from backend.app.voice.router import router as voice_router
 
-settings = get_settings()
-
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("learnova")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager to initialize storage and database tables on startup."""
-    logger.info("Initializing Learnova storage and database schema...")
     settings.ensure_directories()
-    init_db()
-    logger.info("Learnova backend initialized successfully.")
+    initialize()
+    if settings.ENVIRONMENT == "production" and not settings.COOKIE_SECURE:
+        raise RuntimeError("Production requires COOKIE_SECURE=true and HTTPS.")
     yield
-    logger.info("Learnova backend shutting down.")
 
 
-app = FastAPI(
-    title="Learnova API",
-    description="AI Personal Teaching Assistant REST API",
-    version="1.0.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
-
-# CORS Middleware
-origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+app = FastAPI(title="Learnova", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True, allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
-
-# ==============================================================================
-# Standard Exception Handlers adhering to API.md
-# ==============================================================================
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Normalize HTTPExceptions into standard ErrorResponse schema."""
-    req_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex[:8]}")
-    error_payload = ErrorResponse(
-        success=False,
-        error=ErrorDetail(
-            code=f"HTTP_{exc.status_code}",
-            message=str(exc.detail),
-            details={"status_code": exc.status_code},
-        ),
-        meta=MetaSchema(
-            timestamp=datetime.now(timezone.utc),
-            request_id=req_id,
-        ),
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=error_payload.model_dump(mode="json"),
-    )
+# Single-process abuse protection. Multi-worker deployments need a shared limiter.
+auth_attempts: dict[str, deque] = defaultdict(deque)
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Normalize Pydantic request validation errors."""
-    req_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex[:8]}")
-    error_payload = ErrorResponse(
-        success=False,
-        error=ErrorDetail(
-            code="VALIDATION_ERROR",
-            message="The request payload failed schema validation.",
-            details={"errors": exc.errors()},
-        ),
-        meta=MetaSchema(
-            timestamp=datetime.now(timezone.utc),
-            request_id=req_id,
-        ),
-    )
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=error_payload.model_dump(mode="json"),
-    )
+@app.middleware("http")
+async def request_guards(request: Request, call_next):
+    request_id = uuid.uuid4().hex
+    if request.method in {"POST", "DELETE", "PATCH", "PUT"}:
+        origin = request.headers.get("origin")
+        if origin and origin not in settings.CORS_ORIGINS:
+            return JSONResponse({"detail": "Request origin is not allowed."}, status_code=403)
+        if request.headers.get("sec-fetch-site") == "cross-site" and not origin:
+            return JSONResponse({"detail": "Cross-site request is not allowed."}, status_code=403)
+    try:
+        content_length = int(request.headers.get("content-length", "0"))
+    except ValueError:
+        return JSONResponse({"detail": "Invalid request size."}, status_code=400)
+    if content_length > (settings.MAX_UPLOAD_MB * 10 + 1) * 1024 * 1024:
+        return JSONResponse({"detail": "Upload is too large. Add fewer files at a time."}, status_code=413)
+    if request.method == "POST" and request.url.path in {"/api/v2/auth/login", "/api/v2/auth/register"}:
+        now = time.monotonic()
+        client = request.client.host if request.client else "unknown"
+        # Prune idle entries so a long-running process does not retain every client.
+        for host in list(auth_attempts):
+            if not auth_attempts[host] or auth_attempts[host][-1] < now - 60:
+                del auth_attempts[host]
+        attempts = auth_attempts[client]
+        while attempts and attempts[0] < now - 60:
+            attempts.popleft()
+        if len(attempts) >= 20:
+            return JSONResponse({"detail": "Too many sign-in attempts. Try again in a minute."}, status_code=429, headers={"Retry-After": "60"})
+        attempts.append(now)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Normalize unhandled internal errors."""
-    req_id = getattr(request.state, "request_id", f"req_{uuid.uuid4().hex[:8]}")
-    logger.exception(f"Unhandled exception on request {req_id}: {exc}")
-    error_payload = ErrorResponse(
-        success=False,
-        error=ErrorDetail(
-            code="INTERNAL_SERVER_ERROR",
-            message="An unexpected server error occurred.",
-            details={"type": type(exc).__name__},
-        ),
-        meta=MetaSchema(
-            timestamp=datetime.now(timezone.utc),
-            request_id=req_id,
-        ),
-    )
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=error_payload.model_dump(mode="json"),
-    )
+async def unexpected_error(request: Request, exc: Exception):
+    # Do not echo provider responses, request bodies, or secrets to the browser.
+    logger.error("Unhandled request error: %s", type(exc).__name__)
+    return JSONResponse({"detail": "The request could not be completed. Please retry."}, status_code=500)
 
 
-# ==============================================================================
-# Health & Status Routes
-# ==============================================================================
-
-@app.get("/api/health", tags=["System"])
-async def health_check():
-    """System health check endpoint."""
-    return {
-        "success": True,
-        "status": "healthy",
-        "service": "learnova-backend",
-        "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+@app.get("/api/health")
+def health():
+    return {"status": "healthy", "service": "learnova", "version": "0.2.0"}
 
 
-@app.get("/", tags=["System"])
-async def root():
-    """Root redirect / information endpoint."""
-    return {
-        "service": "Learnova AI Teaching Assistant API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "status": "active",
-    }
-
-
-# ==============================================================================
-# Mount API Routers
-# ==============================================================================
-from backend.app.api.documents import router as documents_router
-from backend.app.api.chat import router as chat_router
-from backend.app.api.tutor import router as tutor_router
-from backend.app.api.quiz import router as quiz_router
-from backend.app.api.study_packs import router as study_packs_router
-from backend.app.api.student import router as student_router
-
-app.include_router(documents_router, prefix="/api")
-app.include_router(chat_router, prefix="/api")
-app.include_router(tutor_router, prefix="/api")
-app.include_router(quiz_router, prefix="/api")
-app.include_router(study_packs_router, prefix="/api")
-app.include_router(student_router, prefix="/api")
-
+app.include_router(learning_router)
+app.include_router(voice_router)

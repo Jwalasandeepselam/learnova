@@ -9,7 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 import uuid
 
-from app.ingestion.parsers import ParsedDocument
+from .parsers import ParsedDocument
 
 
 @dataclass

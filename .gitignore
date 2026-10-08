@@ -48,6 +48,11 @@ chroma_db/
 
 # Logs
 *.log
+.pytest_cache/
+.test-data/
+test-results/
+playwright-report/
+*.tsbuildinfo
 
 # IDE & OS
 .idea/
