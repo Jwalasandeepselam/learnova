@@ -16,6 +16,18 @@ import sqlite3
 import time
 import uuid
 
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # Local SQLite-only development remains supported.
+    psycopg = None
+    dict_row = None
+
+try:
+    from supabase import create_client
+except ImportError:
+    create_client = None
+
 from fastapi import HTTPException
 try:
     from backend.app.config import settings
@@ -26,6 +38,41 @@ COOKIE_NAME = "learnova_session"
 logger = logging.getLogger(__name__)
 
 
+class DatabaseRow(dict):
+    """Mapping row with SQLite-compatible positional access for shared queries."""
+    def __getitem__(self, key):
+        return list(self.values())[key] if isinstance(key, int) else super().__getitem__(key)
+
+
+class PostgresCursor:
+    def __init__(self, cursor): self.cursor = cursor
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        return DatabaseRow(row) if row else None
+    def fetchall(self): return [DatabaseRow(row) for row in self.cursor.fetchall()]
+
+
+class PostgresConnection:
+    """Small adapter that keeps the established repository queries portable."""
+    def __init__(self, connection): self.connection = connection
+    def execute(self, query, params=()):
+        query = query.replace('INSERT OR REPLACE INTO embeddings VALUES(?,?,?)',
+            'INSERT INTO embeddings(chunk_id,vector,model) VALUES(%s,%s::vector,%s) ON CONFLICT (chunk_id) DO UPDATE SET vector=EXCLUDED.vector, model=EXCLUDED.model')
+        query = query.replace('rowid', 'created_at').replace('?', '%s')
+        return PostgresCursor(self.connection.execute(query, params))
+    def commit(self): self.connection.commit()
+    def rollback(self): self.connection.rollback()
+    def close(self): self.connection.close()
+
+
+def supabase_enabled():
+    return bool(getattr(settings, 'SUPABASE_URL', '') and getattr(settings, 'SUPABASE_PUBLISHABLE_KEY', ''))
+
+
+def postgres_enabled():
+    return bool(getattr(settings, 'SUPABASE_DATABASE_URL', ''))
+
+
 def uid():
     return str(uuid.uuid4())
 
@@ -34,8 +81,26 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def json_value(value):
+    """Postgres JSONB is already decoded; SQLite stores JSON text."""
+    return json.loads(value) if isinstance(value, (str, bytes, bytearray)) else value
+
+
 @contextmanager
 def database():
+    if postgres_enabled():
+        if psycopg is None:
+            raise RuntimeError('Postgres is configured but psycopg is unavailable. Install backend requirements.')
+        connection = PostgresConnection(psycopg.connect(settings.SUPABASE_DATABASE_URL, row_factory=dict_row))
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return
     path = Path(getattr(settings, "LEARNING_DB_PATH", "./storage/learning.db"))
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=30)
@@ -52,6 +117,12 @@ def database():
 
 
 def initialize():
+    if postgres_enabled():
+        # DDL lives only in versioned Supabase migrations; never mutate a
+        # production database during application boot.
+        with database() as db:
+            db.execute('SELECT id FROM sessions LIMIT 1')
+        return
     with database() as db:
         db.executescript("""
         PRAGMA journal_mode=WAL;
@@ -70,8 +141,66 @@ def initialize():
         CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
         INSERT OR IGNORE INTO schema_migrations VALUES(1);
         """)
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(files)').fetchall()}
+        if 'storage_path' not in columns:
+            db.execute('ALTER TABLE files ADD COLUMN storage_path TEXT')
+        if 'mime_type' not in columns:
+            db.execute('ALTER TABLE files ADD COLUMN mime_type TEXT')
+        if 'byte_size' not in columns:
+            db.execute('ALTER TABLE files ADD COLUMN byte_size INTEGER')
         # A process restart interrupts in-process analysis; never leave false progress.
         db.execute("UPDATE sessions SET status='ERROR',error='Processing was interrupted. Analyze your material again.' WHERE status='PROCESSING'")
+
+
+def authenticate_bearer(token):
+    """Validate a Supabase access token on the server before every API request."""
+    if not supabase_enabled() or not token or create_client is None:
+        return None
+    try:
+        result = create_client(settings.SUPABASE_URL, settings.SUPABASE_PUBLISHABLE_KEY).auth.get_user(token)
+        account = result.user
+        if not account or not account.email:
+            return None
+        return {'id': str(account.id), 'email': account.email}
+    except Exception:
+        logger.info('Supabase access token validation failed')
+        return None
+
+
+def storage_enabled():
+    return bool(supabase_enabled() and getattr(settings, 'SUPABASE_SERVICE_ROLE_KEY', ''))
+
+
+def _storage_client():
+    if not storage_enabled() or create_client is None:
+        return None
+    return create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+
+
+def store_private_material(user_id, session_id, file_id, filename, data, mime_type):
+    """Server-side storage write after bearer authentication; path mirrors RLS ownership."""
+    client = _storage_client()
+    if not client:
+        return None
+    path = f'{user_id}/{session_id}/{file_id}/{filename}'
+    client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
+        path, data, {'content-type': mime_type or 'application/octet-stream', 'upsert': 'false'}
+    )
+    return path
+
+
+def delete_private_material(path):
+    client = _storage_client()
+    if client and path:
+        client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).remove([path])
+
+
+def signed_private_url(path, expires_in=300):
+    client = _storage_client()
+    if not client or not path:
+        return None
+    result = client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).create_signed_url(path, expires_in)
+    return result.get('signedURL') or result.get('signedUrl')
 
 
 def password_hash(password, salt=None):
@@ -102,7 +231,7 @@ def concept_models(session_id):
         attempts = db.execute("SELECT q.concept_id,q.difficulty,a.score,a.created_at FROM questions q JOIN attempts a ON q.id=a.question_id WHERE q.session_id=? ORDER BY a.created_at", (session_id,)).fetchall()
     results = []
     for row in rows:
-        item = json.loads(row['data'])
+        item = json_value(row['data'])
         evidence = [a for a in attempts if a['concept_id'] == row['id']]
         recent = evidence[-8:]
         weight = sum(a['difficulty'] for a in recent)
@@ -117,13 +246,13 @@ def concept_models(session_id):
 def session_detail(session_id, user_id):
     item = get_owned_session(session_id, user_id)
     with database() as db:
-        item['files'] = [dict(r) for r in db.execute("SELECT id,name,status,pages,error,outline FROM files WHERE session_id=? ORDER BY rowid", (session_id,))]
+        item['files'] = [dict(r) for r in db.execute("SELECT id,name,status,pages,error,outline,storage_path,mime_type,byte_size FROM files WHERE session_id=? ORDER BY rowid", (session_id,))]
         item['messages'] = [dict(r) for r in db.execute("SELECT role,content,citations,created_at FROM messages WHERE session_id=? ORDER BY id", (session_id,))]
     for f in item['files']:
-        f['outline'] = json.loads(f['outline'])
+        f['outline'] = json_value(f['outline'])
         f['location_label'] = 'slide' if f['name'].lower().endswith('.pptx') else 'page' if f['name'].lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.webp')) else 'text segment (not printed page)'
     for m in item['messages']:
-        m['citations'] = json.loads(m['citations'])
+        m['citations'] = json_value(m['citations'])
     item['concepts'] = concept_models(session_id)
     item.pop('user_id', None)
     return item
@@ -185,7 +314,7 @@ async def hybrid_retrieve(session_id, query, limit=8):
         norm = math.sqrt(sum(x*x for x in values)) or 1
         semantic = []
         for row in rows:
-            vector = json.loads(row['vector'])
+            vector = json_value(row['vector'])
             if len(vector) != len(values):
                 continue
             similarity = sum(x*y for x,y in zip(vector,values)) / (norm * (math.sqrt(sum(x*x for x in vector)) or 1))

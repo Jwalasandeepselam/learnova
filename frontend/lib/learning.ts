@@ -7,7 +7,11 @@ export type Answer = { correct:boolean; score:number; feedback:string; explanati
 export type Report = {score:number; total:number; percentage:number; difficulty:number|string; strong:string[]; weak:string[]; next_step:string; answered:number; concepts:unknown[]};
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response: Response;
-  try { response = await fetch(`${API}${path}`, { ...options, credentials:'include', headers: { ...(options.body instanceof FormData ? {} : {'Content-Type':'application/json'}), ...options.headers } }); }
+  try {
+    const { accessToken } = await import('./supabase/browser');
+    const token = await accessToken();
+    response = await fetch(`${API}${path}`, { ...options, credentials:'include', headers: { ...(options.body instanceof FormData ? {} : {'Content-Type':'application/json'}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } });
+  }
   catch { throw new Error('Cannot reach Learnova. Check your connection and that the server is running.'); }
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status}). Please try again.`); }
   return response.status === 204 ? undefined as T : response.json();

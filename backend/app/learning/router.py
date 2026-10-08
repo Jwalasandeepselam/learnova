@@ -20,6 +20,13 @@ router = APIRouter(prefix='/api/v2', tags=['Learning'])
 
 
 def user(request: Request):
+    authorization = request.headers.get('Authorization', '')
+    if authorization.lower().startswith('bearer '):
+        account = s.authenticate_bearer(authorization[7:].strip())
+        if account:
+            return account
+    if s.supabase_enabled():
+        raise HTTPException(401, 'Your Supabase session has expired. Sign in again.')
     account = s.authenticate_cookie(request.cookies.get(s.COOKIE_NAME))
     if not account:
         raise HTTPException(401, 'Sign in to continue.')
@@ -46,6 +53,8 @@ def create_login(response, account):
 
 @router.post('/auth/register', status_code=201)
 def register(body: Credentials, response: Response):
+    if s.supabase_enabled():
+        raise HTTPException(410, 'Registration is handled by Supabase Auth in the web client.')
     email = body.email.strip().lower()
     if '@' not in email or '.' not in email.split('@')[-1] or any(c.isspace() for c in email):
         raise HTTPException(422, 'Enter a valid email address.')
@@ -60,6 +69,8 @@ def register(body: Credentials, response: Response):
 
 @router.post('/auth/login')
 def login(body: Credentials, response: Response):
+    if s.supabase_enabled():
+        raise HTTPException(410, 'Sign in is handled by Supabase Auth in the web client.')
     with s.database() as db:
         row = db.execute('SELECT * FROM users WHERE email=?', (body.email.strip().lower(),)).fetchone()
     expected = row['password'] if row else s.password_hash('constant-unknown-account')
@@ -71,6 +82,9 @@ def login(body: Credentials, response: Response):
 
 @router.post('/auth/logout', status_code=204)
 def logout(request: Request, response: Response):
+    if s.supabase_enabled():
+        response.status_code = 204
+        return
     token = request.cookies.get(s.COOKIE_NAME, '')
     with s.database() as db:
         db.execute('DELETE FROM logins WHERE token=?', (hashlib.sha256(token.encode()).hexdigest(),))
@@ -110,7 +124,10 @@ def session(session_id: str, account: User):
 def delete_session(session_id: str, account: User):
     s.get_owned_session(session_id, account['id'])
     with s.database() as db:
+        paths = [row[0] for row in db.execute('SELECT storage_path FROM files WHERE session_id=? AND storage_path IS NOT NULL', (session_id,)).fetchall()]
         db.execute('DELETE FROM sessions WHERE id=?', (session_id,))
+    for path in paths:
+        s.delete_private_material(path)
 
 
 @router.post('/sessions/{session_id}/files')
@@ -130,13 +147,14 @@ async def upload(session_id: str, tasks: BackgroundTasks, account: User, files: 
         total += len(data)
         if len(data) > getattr(s.settings, 'MAX_UPLOAD_MB', 20) * 1024 * 1024 or total > 24 * 1024 * 1024:
             raise HTTPException(413, 'Upload too large. Upload fewer or smaller files (20 MB per file; 24 MB per batch).')
-        payload.append((s.uid(), Path((file.filename or 'upload.txt').replace('\\', '/')).name[:200], data))
+        payload.append((s.uid(), Path((file.filename or 'upload.txt').replace('\\', '/')).name[:200], data, file.content_type or 'application/octet-stream'))
     with s.database() as db:
         invalidate(db, session_id)
-        for fid, name, _ in payload:
-            db.execute('INSERT INTO files(id,session_id,name,status) VALUES(?,?,?,?)', (fid, session_id, name, 'PROCESSING'))
+        for fid, name, data, mime_type in payload:
+            storage_path = s.store_private_material(account['id'], session_id, fid, name, data, mime_type)
+            db.execute('INSERT INTO files(id,session_id,name,status,storage_path,mime_type,byte_size) VALUES(?,?,?,?,?,?,?)', (fid, session_id, name, 'QUEUED', storage_path, mime_type, len(data)))
         db.execute("UPDATE sessions SET status='PROCESSING' WHERE id=?", (session_id,))
-    tasks.add_task(ingest, session_id, payload)
+    tasks.add_task(ingest, session_id, [(fid, name, data) for fid, name, data, _ in payload])
     return s.session_detail(session_id, account['id'])
 
 
@@ -146,11 +164,26 @@ def remove_file(session_id: str, file_id: str, account: User):
     if existing['status'] == 'PROCESSING':
         raise HTTPException(409, 'Wait for processing to finish before removing material.')
     with s.database() as db:
-        if not db.execute('SELECT 1 FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone():
+        file_row = db.execute('SELECT storage_path FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone()
+        if not file_row:
             raise HTTPException(404, 'File not found.')
         invalidate(db, session_id)
         db.execute('DELETE FROM files WHERE id=?', (file_id,))
+    s.delete_private_material(file_row['storage_path'])
     return s.session_detail(session_id, account['id'])
+
+
+@router.get('/sessions/{session_id}/files/{file_id}/signed-url')
+def file_signed_url(session_id: str, file_id: str, account: User):
+    s.get_owned_session(session_id, account['id'])
+    with s.database() as db:
+        row = db.execute('SELECT storage_path,mime_type FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone()
+    if not row:
+        raise HTTPException(404, 'File not found.')
+    url = s.signed_private_url(row['storage_path'])
+    if not url:
+        raise HTTPException(409, 'Private file preview is unavailable until Supabase Storage is configured.')
+    return {'url': url, 'expires_in': 300, 'mime_type': row['mime_type']}
 
 
 @router.post('/sessions/{session_id}/analyze')
@@ -198,7 +231,7 @@ async def chat(session_id: str, body: ChatInput, account: User):
     s.add_message(session_id, 'user', body.message)
     s.add_message(session_id, 'assistant', result['message'], citations)
     with s.database() as db:
-        db.execute('UPDATE concepts SET introduced=1 WHERE id=?', (concept['id'],))
+        db.execute('UPDATE concepts SET introduced=TRUE WHERE id=?', (concept['id'],))
     return {'message': result['message'], 'citations': citations, 'strategy': result.get('strategy', 'simple')}
 
 
@@ -231,7 +264,7 @@ async def quiz(session_id: str, body: QuizInput, account: User):
     if not sources:
         raise HTTPException(422, 'No relevant material found for this concept.')
     with s.database() as db:
-        old = [json.loads(r[0])['prompt'] for r in db.execute('SELECT data FROM questions WHERE session_id=? ORDER BY rowid DESC LIMIT 12', (session_id,))]
+        old = [s.json_value(r[0])['prompt'] for r in db.execute('SELECT data FROM questions WHERE session_id=? ORDER BY rowid DESC LIMIT 12', (session_id,))]
     result = await s.generate_json('Create one novel question based ONLY on sources. Difficulty 1=recall,2=understanding,3=application,4=analysis. Vary question types appropriately; numerical only with source formulas. Return {"prompt":"...","type":"multiple_choice|true_false|short_answer|numerical|explanation","options":["..."],"answer":"exact correct option or rubric","explanation":"source-grounded explanation","source_ids":["chunk id"]}. For choice questions use 2-5 unique options and answer exactly one option. For other types options=[]. Do not disclose the answer in the prompt. Do not repeat earlier questions.', {'concept': concept, 'difficulty': level, 'sources': sources, 'earlier_questions': old, 'final_assessment': body.final})
     options = result.get('options', [])
     valid_ids = {c['id'] for c in sources}
@@ -246,7 +279,7 @@ async def quiz(session_id: str, body: QuizInput, account: User):
     with s.database() as db:
         if s.get_owned_session(session_id, account['id'])['revision'] != initial['revision']:
             raise HTTPException(409, 'Your material changed while this question was being prepared. Retry with the updated session.')
-        db.execute('INSERT INTO questions VALUES(?,?,?,?,?,?,?)', (qid, session_id, concept['id'], json.dumps(result), level, int(body.final), s.now()))
+        db.execute('INSERT INTO questions VALUES(?,?,?,?,?,?,?)', (qid, session_id, concept['id'], json.dumps(result), level, bool(body.final), s.now()))
     return {'id': qid, 'prompt': result['prompt'], 'type': result['type'], 'options': options, 'difficulty': ['Easy', 'Medium', 'Hard', 'Advanced'][level-1], 'concept_id': concept['id'], 'final': body.final, 'assessment_position': final_questions + 1 if body.final else None, 'assessment_length': final_target if body.final else None}
 
 
@@ -264,7 +297,7 @@ async def answer(session_id: str, body: AnswerInput, account: User):
             raise HTTPException(404, 'Question not found.')
         if db.execute('SELECT 1 FROM attempts WHERE question_id=?', (body.question_id,)).fetchone():
             raise HTTPException(409, 'This question has already been scored. Request a new question to practice again.')
-    question = json.loads(row['data'])
+    question = s.json_value(row['data'])
     if question['type'] in ('multiple_choice', 'true_false'):
         score = float(body.answer.strip().casefold() == question['answer'].strip().casefold())
         feedback = 'Correct.' if score else 'Review the source explanation, then try a simpler question on this concept.'

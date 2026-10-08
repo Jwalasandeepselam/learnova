@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     STORAGE_DIR: str = str(ROOT_DIR / "storage")
     LEARNING_DB_PATH: str = str(ROOT_DIR / "storage" / "learning.db")
+    # Setting this URL switches learning persistence to the Supabase Postgres
+    # schema. Keep it server-only; browser clients only receive the publishable key.
+    SUPABASE_DATABASE_URL: str = ""
+    SUPABASE_URL: str = ""
+    SUPABASE_PUBLISHABLE_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "learning-materials"
     DATABASE_URL: str = "sqlite:///" + str(ROOT_DIR / "learnova.db").replace("\\", "/")
     VECTOR_STORE_DIR: str = str(ROOT_DIR / "storage" / "vector_store")
     CHROMA_PERSIST_DIR: str = str(ROOT_DIR / "storage" / "chroma_db")

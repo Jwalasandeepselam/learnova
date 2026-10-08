@@ -68,6 +68,8 @@ def invalidate(db, session_id):
 async def ingest(session_id, files):
     for file_id, name, data in files:
         try:
+            with s.database() as db:
+                db.execute("UPDATE files SET status='EXTRACTING',error=NULL WHERE id=?", (file_id,))
             pages, outline = await extract(data, name)
             with s.database() as db:
                 if not db.execute('SELECT 1 FROM files WHERE id=?', (file_id,)).fetchone():
@@ -92,6 +94,7 @@ async def analyze(session_id):
         if not row:
             return
         revision = row['revision']
+        db.execute("UPDATE sessions SET status='ANALYZING',error=NULL WHERE id=?", (session_id,))
         failed = db.execute("SELECT count(*) FROM files WHERE session_id=? AND status!='READY'", (session_id,)).fetchone()[0]
         chunks = [dict(r) for r in db.execute('SELECT c.id,c.file_id document_id,c.page,c.text FROM chunks c WHERE c.session_id=? ORDER BY rowid', (session_id,))]
     try:
@@ -100,6 +103,8 @@ async def analyze(session_id):
         if not chunks:
             raise HTTPException(422, 'Upload material containing readable text first.')
         try:
+            with s.database() as db:
+                db.execute("UPDATE sessions SET status='INDEXING' WHERE id=? AND revision=?", (session_id, revision))
             for start in range(0, len(chunks), 32):
                 batch = chunks[start:start+32]
                 vectors = await s.embed_texts([item['text'] for item in batch])

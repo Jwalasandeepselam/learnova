@@ -53,6 +53,10 @@ Copy [`.env.example`](.env.example) to `backend/.env` and configure:
 
 Production must use HTTPS and `COOKIE_SECURE=true`. Do not commit `backend/.env`, frontend environment files containing private values, uploads, or SQLite databases.
 
+## Supabase production mode
+
+Learnova includes a Supabase Auth, Postgres, pgvector, RLS, and private Storage migration at [`supabase/migrations/20261008172230_learnova_production_schema.sql`](supabase/migrations/20261008172230_learnova_production_schema.sql). The browser uses Supabase email/password sessions, including confirmation and password-reset routes; the FastAPI API validates the bearer token before it reaches learning data. Follow [the production setup guide](docs/supabase-production.md) to configure keys, Auth redirect URLs, RLS-backed Storage, migrations, and a safe SQLite cutover.
+
 ## Source-grounding guarantees
 
 Learnova stores source locations beside extracted chunks. Tutor and quiz calls retrieve only chunks belonging to the active account and session. A model output is rejected when it does not cite an actual retrieved chunk.
