@@ -1,3 +1,5 @@
+import { accessToken } from './supabase/browser';
+
 export type VoiceState = 'Idle' | 'Connecting' | 'Listening' | 'Thinking' | 'Speaking' | 'Interrupted' | 'Error';
 type Callbacks = { state: (s: VoiceState) => void; error: (s: string) => void; transcript: () => void };
 
@@ -32,7 +34,11 @@ export class LiveVoiceClient {
       const base = process.env.NEXT_PUBLIC_VOICE_URL || process.env.NEXT_PUBLIC_API_URL || window.location.origin;
       const url = new URL(`/api/v2/sessions/${encodeURIComponent(sessionId)}/voice`, base);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      this.socket = new WebSocket(url);
+      // A WebSocket cannot attach an Authorization header. The second negotiated
+      // subprotocol transports the short-lived Supabase access token without URL
+      // logging; local-cookie mode continues to use the first protocol alone.
+      const token = await accessToken();
+      this.socket = new WebSocket(url, token ? ['learnova', token] : ['learnova']);
       this.connectTimer = setTimeout(() => this.fail('Voice connection timed out. Try again or continue using text.'), 20000);
       this.socket.onmessage = event => {
         try {

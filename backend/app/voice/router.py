@@ -30,13 +30,29 @@ as source facts. Keep responses brief enough for conversation.
 """
 
 
+async def authenticated_voice_user(websocket: WebSocket):
+    """Authenticate either the Supabase WebSocket subprotocol or local cookie.
+
+    Browsers do not permit a custom Authorization header during WebSocket setup.
+    In Supabase mode the client therefore offers `learnova, <access-token>` and
+    the server only echoes the stable `learnova` protocol after validation.
+    """
+    protocols = [value.strip() for value in websocket.headers.get('sec-websocket-protocol', '').split(',') if value.strip()]
+    if protocols and protocols[0] != 'learnova':
+        return None
+    token = protocols[1] if len(protocols) == 2 else None
+    if service.supabase_enabled():
+        return service.authenticate_bearer(token)
+    return service.authenticate_cookie(websocket.cookies.get(service.COOKIE_NAME))
+
+
 @router.websocket('/api/v2/sessions/{session_id}/voice')
 async def live_voice(websocket: WebSocket, session_id: str):
     # WebSocket cookies alone are insufficient: require a trusted browser origin.
     if websocket.headers.get('origin') not in settings.CORS_ORIGINS:
         await websocket.close(code=1008)
         return
-    user = await asyncio.to_thread(service.authenticate_cookie, websocket.cookies.get(service.COOKIE_NAME))
+    user = await authenticated_voice_user(websocket)
     if not user:
         await websocket.close(code=1008)
         return
@@ -45,7 +61,7 @@ async def live_voice(websocket: WebSocket, session_id: str):
     except HTTPException:
         await websocket.close(code=1008)
         return
-    await websocket.accept()
+    await websocket.accept(subprotocol='learnova' if websocket.headers.get('sec-websocket-protocol') else None)
     if detail['status'] != 'READY':
         await websocket.send_json({'type': 'error', 'message': 'Finish analyzing your material before starting voice.'})
         await websocket.close(code=1008)

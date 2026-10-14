@@ -21,3 +21,16 @@ def test_health_and_security_headers():
         assert response.status_code == 200
         assert response.headers["X-Content-Type-Options"] == "nosniff"
         assert response.headers["Cache-Control"] == "no-store"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_login_rate_limit_is_enforced(monkeypatch):
+    from backend.app import main
+    main.rate_buckets.clear()
+    with TestClient(app) as client:
+        for _ in range(10):
+            client.post('/api/v2/auth/login', json={'email': 'limit@example.com', 'password': 'not-a-password'})
+        response = client.post('/api/v2/auth/login', json={'email': 'limit@example.com', 'password': 'not-a-password'})
+    assert response.status_code == 429
+    assert response.headers['Retry-After'] == '60'

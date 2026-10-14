@@ -74,6 +74,18 @@ def test_socket_rejects_missing_login(monkeypatch):
     assert exc.value.code == 1008
 
 
+def test_socket_accepts_supabase_subprotocol_auth(monkeypatch):
+    import asyncio
+    import importlib
+    module = importlib.import_module(OutputGate.__module__.rsplit('.', 1)[0] + '.router')
+    class Socket:
+        headers = {'sec-websocket-protocol': 'learnova, token'}
+        cookies = {}
+    monkeypatch.setattr(module.service, 'supabase_enabled', lambda: True)
+    monkeypatch.setattr(module.service, 'authenticate_bearer', lambda token: {'id': 'owner-a'} if token == 'token' else None)
+    assert asyncio.run(module.authenticated_voice_user(Socket())) == {'id': 'owner-a'}
+
+
 def test_socket_rejects_other_users_session(monkeypatch):
     from fastapi import FastAPI, HTTPException
     from fastapi.testclient import TestClient
