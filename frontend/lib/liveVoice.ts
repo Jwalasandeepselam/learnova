@@ -22,7 +22,7 @@ export class LiveVoiceClient {
   private connectTimer?: ReturnType<typeof setTimeout>;
   constructor(private callbacks: Callbacks) {}
 
-  async start(sessionId: string) {
+  async start(sessionId: string, conceptId?: string) {
     try {
       this.callbacks.state('Connecting');
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access requires HTTPS or localhost and a supported browser.');
@@ -35,6 +35,7 @@ export class LiveVoiceClient {
       const base = process.env.NEXT_PUBLIC_VOICE_URL || process.env.NEXT_PUBLIC_API_URL || window.location.origin;
       const url = new URL(`/api/v2/sessions/${encodeURIComponent(sessionId)}/voice`, base);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      if (conceptId) url.searchParams.set('concept_id', conceptId);
       // A WebSocket cannot attach an Authorization header. Get a short-lived,
       // single-use ticket through the same-origin authenticated API, then pass it
       // as a negotiated protocol rather than exposing it in the URL or logs.
