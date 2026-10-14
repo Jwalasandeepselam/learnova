@@ -82,6 +82,7 @@ def test_socket_accepts_supabase_subprotocol_auth(monkeypatch):
         headers = {'sec-websocket-protocol': 'learnova, token'}
         cookies = {}
     monkeypatch.setattr(module.service, 'supabase_enabled', lambda: True)
+    monkeypatch.setattr(module.service, 'consume_voice_ticket', lambda *_: None)
     monkeypatch.setattr(module.service, 'authenticate_bearer', lambda token: {'id': 'owner-a'} if token == 'token' else None)
     assert asyncio.run(module.authenticated_voice_user(Socket())) == {'id': 'owner-a'}
 

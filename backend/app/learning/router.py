@@ -120,6 +120,12 @@ def session(session_id: str, account: User):
     return s.session_detail(session_id, account['id'])
 
 
+@router.post('/sessions/{session_id}/voice-ticket')
+def voice_ticket(session_id: str, account: User):
+    s.get_owned_session(session_id, account['id'])
+    return {'ticket': s.create_voice_ticket(session_id, account['id']), 'expires_in': 90}
+
+
 @router.delete('/sessions/{session_id}', status_code=204)
 def delete_session(session_id: str, account: User):
     s.get_owned_session(session_id, account['id'])

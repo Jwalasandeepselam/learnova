@@ -138,6 +138,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,role TEXT,content TEXT,citations TEXT,created_at TEXT);
         CREATE TABLE IF NOT EXISTS questions(id TEXT PRIMARY KEY,session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,concept_id TEXT REFERENCES concepts(id) ON DELETE CASCADE,data TEXT NOT NULL,difficulty INTEGER NOT NULL,is_final INTEGER DEFAULT 0,created_at TEXT);
         CREATE TABLE IF NOT EXISTS attempts(question_id TEXT PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,answer TEXT,score REAL,feedback TEXT,created_at TEXT);
+        CREATE TABLE IF NOT EXISTS voice_tickets(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,session_id TEXT NOT NULL,expires REAL NOT NULL);
         CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
         INSERT OR IGNORE INTO schema_migrations VALUES(1);
         """)
@@ -215,6 +216,28 @@ def authenticate_cookie(cookie_value):
     with database() as db:
         row = db.execute("SELECT users.id,users.email FROM users JOIN logins ON users.id=logins.user_id WHERE token=? AND expires>?", (hashlib.sha256(cookie_value.encode()).hexdigest(), time.time())).fetchone()
     return dict(row) if row else None
+
+
+def create_voice_ticket(session_id, user_id, ttl_seconds=90):
+    """Create a short-lived, single-use credential for a cross-origin WebSocket."""
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with database() as db:
+        db.execute('DELETE FROM voice_tickets WHERE expires<?', (time.time(),))
+        db.execute('INSERT INTO voice_tickets VALUES(?,?,?,?)', (token_hash, user_id, session_id, time.time() + ttl_seconds))
+    return token
+
+
+def consume_voice_ticket(token, session_id):
+    if not token or len(token) > 256:
+        return None
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with database() as db:
+        row = db.execute('SELECT user_id,session_id,expires FROM voice_tickets WHERE token_hash=?', (token_hash,)).fetchone()
+        db.execute('DELETE FROM voice_tickets WHERE token_hash=?', (token_hash,))
+    if not row or row['session_id'] != session_id or row['expires'] < time.time():
+        return None
+    return {'id': row['user_id']}
 
 
 def get_owned_session(session_id, user_id):

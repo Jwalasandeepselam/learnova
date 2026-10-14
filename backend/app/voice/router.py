@@ -41,6 +41,9 @@ async def authenticated_voice_user(websocket: WebSocket):
     if protocols and protocols[0] != 'learnova':
         return None
     token = protocols[1] if len(protocols) == 2 else None
+    ticket_user = service.consume_voice_ticket(token, websocket.path_params['session_id']) if token else None
+    if ticket_user:
+        return ticket_user
     if service.supabase_enabled():
         return service.authenticate_bearer(token)
     return service.authenticate_cookie(websocket.cookies.get(service.COOKIE_NAME))

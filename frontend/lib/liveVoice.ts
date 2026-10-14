@@ -1,4 +1,5 @@
 import { accessToken } from './supabase/browser';
+import { api } from './learning';
 
 export type VoiceState = 'Idle' | 'Connecting' | 'Listening' | 'Thinking' | 'Speaking' | 'Interrupted' | 'Error';
 type Callbacks = { state: (s: VoiceState) => void; error: (s: string) => void; transcript: () => void };
@@ -34,10 +35,11 @@ export class LiveVoiceClient {
       const base = process.env.NEXT_PUBLIC_VOICE_URL || process.env.NEXT_PUBLIC_API_URL || window.location.origin;
       const url = new URL(`/api/v2/sessions/${encodeURIComponent(sessionId)}/voice`, base);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      // A WebSocket cannot attach an Authorization header. The second negotiated
-      // subprotocol transports the short-lived Supabase access token without URL
-      // logging; local-cookie mode continues to use the first protocol alone.
-      const token = await accessToken();
+      // A WebSocket cannot attach an Authorization header. Get a short-lived,
+      // single-use ticket through the same-origin authenticated API, then pass it
+      // as a negotiated protocol rather than exposing it in the URL or logs.
+      const issued = await api<{ ticket: string }>(`/sessions/${encodeURIComponent(sessionId)}/voice-ticket`, { method: 'POST', body: '{}' });
+      const token = issued.ticket || await accessToken();
       this.socket = new WebSocket(url, token ? ['learnova', token] : ['learnova']);
       this.connectTimer = setTimeout(() => this.fail('Voice connection timed out. Try again or continue using text.'), 20000);
       this.socket.onmessage = event => {
