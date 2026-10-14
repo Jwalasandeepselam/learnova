@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = str(ROOT_DIR / "storage" / "chroma_db")
     DEFAULT_LLM_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Keep the default aligned with the model available to the configured
+    # project. Deployments can override this without a code change.
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     GEMINI_LIVE_MODEL: str = "gemini-3.8-live"
     AI_EMBEDDING_PROVIDER: str = "local"
