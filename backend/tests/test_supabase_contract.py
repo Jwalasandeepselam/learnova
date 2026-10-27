@@ -28,4 +28,10 @@ def test_production_migration_has_private_storage_rls_and_no_privileged_rpc():
     assert 'storage.foldername(name)' in migration
     assert 'security invoker' in migration
     assert 'security definer' not in migration
+
+
+def test_file_paths_are_server_managed_for_browser_roles():
+    migration = next((Path(__file__).parents[2] / 'supabase' / 'migrations').glob('*_lock_file_storage_paths.sql')).read_text(encoding='utf-8').lower()
+    assert 'for select to authenticated' in migration
+    assert 'revoke insert, update, delete on public.files from authenticated' in migration
     assert 'match_chunks' in migration and 'auth.uid()' in migration

@@ -5,6 +5,11 @@ import { hasSupabase, supabaseBrowser } from './supabase/browser';
 
 export type AuthUser = { id?: string; email: string };
 
+// Keep these aligned with backend.app.learning.router.Credentials. Validating
+// here prevents the UI from accepting a password the API will reject.
+export const PASSWORD_MIN_LENGTH = 10;
+export const PASSWORD_MAX_LENGTH = 128;
+
 export async function currentUser(): Promise<AuthUser> {
   if (!hasSupabase()) return api<AuthUser>('/auth/me');
   const { data, error } = await supabaseBrowser()!.auth.getUser();

@@ -4,6 +4,13 @@ import { api } from './learning';
 export type VoiceState = 'Idle' | 'Connecting' | 'Listening' | 'Thinking' | 'Speaking' | 'Interrupted' | 'Error';
 type Callbacks = { state: (s: VoiceState) => void; error: (s: string) => void; transcript: () => void };
 
+export function voiceWebSocketUrl(path: string, base: string) {
+  const url = new URL(path, base);
+  if (url.protocol === 'https:') url.protocol = 'wss:';
+  else if (url.protocol === 'http:') url.protocol = 'ws:';
+  return url;
+}
+
 /** PCM transport owns its devices and releases them on every close/error path. */
 export class LiveVoiceClient {
   private socket?: WebSocket;
@@ -20,9 +27,12 @@ export class LiveVoiceClient {
   private speakingFrames = 0;
   private ready = false;
   private connectTimer?: ReturnType<typeof setTimeout>;
+  private generation = 0;
   constructor(private callbacks: Callbacks) {}
 
   async start(sessionId: string, conceptId?: string) {
+    const generation = ++this.generation;
+    this.stopped = false;
     try {
       this.callbacks.state('Connecting');
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access requires HTTPS or localhost and a supported browser.');
@@ -30,22 +40,26 @@ export class LiveVoiceClient {
       this.context = new AudioContext();
       await this.context.resume();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-      if (this.stopped) { stream.getTracks().forEach(t => t.stop()); return; }
+      if (!this.isCurrent(generation)) { stream.getTracks().forEach(t => t.stop()); return; }
       this.stream = stream;
       const base = process.env.NEXT_PUBLIC_VOICE_URL || process.env.NEXT_PUBLIC_API_URL || window.location.origin;
-      const url = new URL(`/api/v2/sessions/${encodeURIComponent(sessionId)}/voice`, base);
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = voiceWebSocketUrl(`/api/v2/sessions/${encodeURIComponent(sessionId)}/voice`, base);
       if (conceptId) url.searchParams.set('concept_id', conceptId);
       // A WebSocket cannot attach an Authorization header. Get a short-lived,
       // single-use ticket through the same-origin authenticated API, then pass it
       // as a negotiated protocol rather than exposing it in the URL or logs.
       const issued = await api<{ ticket: string }>(`/sessions/${encodeURIComponent(sessionId)}/voice-ticket`, { method: 'POST', body: '{}' });
+      if (!this.isCurrent(generation)) return;
       const token = issued.ticket || await accessToken();
-      this.socket = new WebSocket(url, token ? ['learnova', token] : ['learnova']);
+      if (!this.isCurrent(generation)) return;
+      const socket = new WebSocket(url, token ? ['learnova', token] : ['learnova']);
+      if (!this.isCurrent(generation)) { socket.close(); return; }
+      this.socket = socket;
       this.connectTimer = setTimeout(() => this.fail('Voice connection timed out. Try again or continue using text.'), 20000);
       this.socket.onmessage = event => {
         try {
           const message = JSON.parse(event.data);
+          if (!this.isCurrent(generation)) return;
           if (message.type === 'ready') {
             clearTimeout(this.connectTimer); this.ready = true; this.capture(); this.callbacks.state('Listening');
           } else if (message.type === 'audio' && !this.blocked) this.play(message.data);
@@ -55,10 +69,12 @@ export class LiveVoiceClient {
           else if (message.type === 'error') this.fail(message.message || 'Voice is unavailable. Continue using text.');
         } catch { this.fail('The voice connection returned an invalid response. Please reconnect.'); }
       };
-      this.socket.onerror = () => this.fail('Voice connection failed. Check your connection and sign-in, then reconnect. Text remains available.');
-      this.socket.onclose = () => { if (!this.stopped) this.fail('Voice disconnected. Reconnect to continue; your saved conversation is preserved.'); };
-    } catch (error) { this.fail(error instanceof Error ? error.message : 'Microphone access failed.'); }
+      this.socket.onerror = () => { if (this.isCurrent(generation)) this.fail('Voice connection failed. Check your connection and sign-in, then reconnect. Text remains available.'); };
+      this.socket.onclose = () => { if (this.isCurrent(generation)) this.fail('Voice disconnected. Reconnect to continue; your saved conversation is preserved.'); };
+    } catch (error) { if (this.isCurrent(generation)) this.fail(error instanceof Error ? error.message : 'Microphone access failed.'); }
   }
+
+  private isCurrent(generation: number) { return !this.stopped && generation === this.generation; }
 
   private send(value: object) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(value)); }
   private capture() {
@@ -107,6 +123,7 @@ export class LiveVoiceClient {
   mute(value: boolean) { this.muted = value; this.stream?.getAudioTracks().forEach(t => { t.enabled = !value; }); if (value) this.send({ type: 'pause' }); }
   private fail(message: string) { if (this.stopped) return; this.stop(); this.callbacks.error(message); this.callbacks.state('Error'); }
   stop() {
+    this.generation++;
     this.stopped = true; this.ready = false; clearTimeout(this.connectTimer); this.clearAudio();
     this.socket?.close(); if (this.processor) { this.processor.onaudioprocess = null; this.processor.disconnect(); }
     this.source?.disconnect(); this.silent?.disconnect(); this.stream?.getTracks().forEach(t => t.stop());

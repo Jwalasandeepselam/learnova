@@ -50,6 +50,9 @@ class PostgresCursor:
         row = self.cursor.fetchone()
         return DatabaseRow(row) if row else None
     def fetchall(self): return [DatabaseRow(row) for row in self.cursor.fetchall()]
+    def __iter__(self):
+        """Match sqlite cursors for legacy read paths that iterate execute()."""
+        return iter(self.fetchall())
 
 
 class PostgresConnection:
@@ -187,6 +190,18 @@ def store_private_material(user_id, session_id, file_id, filename, data, mime_ty
     client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
         path, data, {'content-type': mime_type or 'application/octet-stream', 'upsert': 'false'}
     )
+    return path
+
+
+def owns_storage_path(user_id, session_id, file_id, path):
+    """Only server-created paths may be signed or deleted for a file."""
+    prefix = f'{user_id}/{session_id}/{file_id}/'
+    return isinstance(path, str) and path.startswith(prefix) and len(path) > len(prefix)
+
+
+def require_owned_storage_path(user_id, session_id, file_id, path):
+    if not owns_storage_path(user_id, session_id, file_id, path):
+        raise HTTPException(409, 'Material storage metadata is invalid. Re-upload the file before retrying.')
     return path
 
 

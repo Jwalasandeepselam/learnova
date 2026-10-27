@@ -11,6 +11,14 @@ export function LiveVoice({ sessionId, conceptId, conceptTitle, onTranscript }: 
   const transcript = useRef(onTranscript);
   useEffect(() => { transcript.current = onTranscript; }, [onTranscript]);
   useEffect(() => () => { client.current?.stop(); }, [sessionId]);
+  useEffect(() => {
+    if (!client.current) return;
+    client.current.stop();
+    client.current = null;
+    setMuted(false);
+    setState('Idle');
+    setError('Lesson topic changed. Start the lesson again to teach the newly selected topic.');
+  }, [conceptId]);
   const active = state !== 'Idle' && state !== 'Error';
   function start() {
     client.current?.stop(); setError(''); setMuted(false);

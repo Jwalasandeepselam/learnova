@@ -6,7 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:build": "electron-builder --win nsis"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.learnova.desktop",
+    "productName": "Learnova",
+    "files": ["desktop/**/*", "package.json"],
+    "win": { "target": "nsis", "artifactName": "Learnova-Setup-${version}.${ext}" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true }
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -21,6 +31,8 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",

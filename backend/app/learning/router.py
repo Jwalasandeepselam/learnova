@@ -103,7 +103,7 @@ class SessionInput(BaseModel):
 @router.get('/sessions')
 def sessions(account: User):
     with s.database() as db:
-        ids = [r[0] for r in db.execute('SELECT id FROM sessions WHERE user_id=? ORDER BY created_at DESC', (account['id'],))]
+        ids = [r['id'] for r in db.execute('SELECT id FROM sessions WHERE user_id=? ORDER BY created_at DESC', (account['id'],)).fetchall()]
     return [s.session_detail(i, account['id']) for i in ids]
 
 
@@ -130,7 +130,8 @@ def voice_ticket(session_id: str, account: User):
 def delete_session(session_id: str, account: User):
     s.get_owned_session(session_id, account['id'])
     with s.database() as db:
-        paths = [row[0] for row in db.execute('SELECT storage_path FROM files WHERE session_id=? AND storage_path IS NOT NULL', (session_id,)).fetchall()]
+        files = db.execute('SELECT id,storage_path FROM files WHERE session_id=? AND storage_path IS NOT NULL', (session_id,)).fetchall()
+        paths = [s.require_owned_storage_path(account['id'], session_id, file['id'], file['storage_path']) for file in files]
         db.execute('DELETE FROM sessions WHERE id=?', (session_id,))
     for path in paths:
         s.delete_private_material(path)
@@ -173,9 +174,10 @@ def remove_file(session_id: str, file_id: str, account: User):
         file_row = db.execute('SELECT storage_path FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone()
         if not file_row:
             raise HTTPException(404, 'File not found.')
+        path = s.require_owned_storage_path(account['id'], session_id, file_id, file_row['storage_path'])
         invalidate(db, session_id)
         db.execute('DELETE FROM files WHERE id=?', (file_id,))
-    s.delete_private_material(file_row['storage_path'])
+    s.delete_private_material(path)
     return s.session_detail(session_id, account['id'])
 
 
@@ -186,7 +188,8 @@ def file_signed_url(session_id: str, file_id: str, account: User):
         row = db.execute('SELECT storage_path,mime_type FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone()
     if not row:
         raise HTTPException(404, 'File not found.')
-    url = s.signed_private_url(row['storage_path'])
+    path = s.require_owned_storage_path(account['id'], session_id, file_id, row['storage_path'])
+    url = s.signed_private_url(path)
     if not url:
         raise HTTPException(409, 'Private file preview is unavailable until Supabase Storage is configured.')
     return {'url': url, 'expires_in': 300, 'mime_type': row['mime_type']}

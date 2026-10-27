@@ -16,4 +16,20 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${response.status}). Please try again.`); }
   return response.status === 204 ? undefined as T : response.json();
 }
+
+export async function download(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    const { accessToken } = await import('./supabase/browser');
+    const token = await accessToken();
+    response = await fetch(`${API}${path}`, { credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new Error('Cannot reach Learnova. Check your connection and that the server is running.');
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(typeof data.detail === 'string' ? data.detail : `Download failed (${response.status}). Please try again.`);
+  }
+  return response.blob();
+}
 export const post = <T,>(path:string, data:unknown = {}) => api<T>(path,{method:'POST',body:JSON.stringify(data)});

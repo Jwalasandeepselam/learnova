@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PUMA: Pure Athletics — 60s Video Pre-Viz</title>
+<style>
+  /* ═══════════════════════════════════════════════════════
+     DESIGN TOKENS
+     ═══════════════════════════════════════════════════════ */
+  :root {
+    --obsidian: #0B0B0B;
+    --obsidian-deep: #050505;
+    --volt: #E5F900;
+    --flame: #FF4500;
+    --chrome: #C0C0C0;
+    --chrome-light: #E8E8E8;
+    --white: #FFFFFF;
+    --white-50: rgba(255,255,255,0.5);
+    --white-20: rgba(255,255,255,0.2);
+    --white-10: rgba(255,255,255,0.1);
+    --volt-glow: rgba(229,249,0,0.4);
+    --flame-glow: rgba(255,69,0,0.4);
+
+    --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+
+    --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-impact: cubic-bezier(0.05, 0.9, 0.1, 1.1);
+    --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  /* GPU-animated gradient angle */
+  @property --glow-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     RESET & BASE
+     ═══════════════════════════════════════════════════════ */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @font-face {
+    font-family: 'Inter';
+    src: url('https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2') format('woff2');
+    font-weight: 100 900;
+    font-display: swap;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--obsidian-deep);
+    color: var(--white);
+    font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     PRELOADER
+     ═══════════════════════════════════════════════════════ */
+  #preloader {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: var(--obsidian-deep);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    transition: opacity 0.8s ease, visibility 0.8s ease;
+  }
+  #preloader.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .preloader-text {
+    font-size: clamp(0.75rem, 1.5vw, 1rem);
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: var(--volt);
+    animation: pulse-glow 1.5s ease-in-out infinite;
+  }
+  .preloader-bar {
+    width: min(300px, 60vw);
+    height: 2px;
+    background: var(--white-10);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .preloader-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--volt), var(--flame));
+    width: 0%;
+    animation: load-fill 3s var(--ease-smooth) forwards;
+  }
+  @keyframes load-fill { to { width: 100%; } }
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     PARTICLE CANVAS
+     ═══════════════════════════════════════════════════════ */
+  #particles {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     SCENES
+     ═══════════════════════════════════════════════════════ */
+  .scene {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    z-index: 2;
+  }
+  .scene.active {
+    opacity: 1;
+    visibility: visible;
+  }
+  .scene-bg {
+    position: absolute;
+    inset: -20px;
+    background-size: cover;
+    background-position: center;
+    filter: brightness(0.45) contrast(1.3) saturate(1.2);
+    transform: scale(1);
+    transition: transform 14s linear;
+  }
+  .scene.active .scene-bg {
+    transform: scale(1.12);
+  }
+  #scene1-bg { background-image: url('scene1.jpg'); }
+  #scene2-bg { background-image: url('scene2.jpg'); }
+  #scene3-bg { background-image: url('scene3.jpg'); }
+  #scene4-bg { background-image: url('scene4.jpg'); }
+  #scene5-bg { background-image: url('scene5.jpg'); }
+
+  .scene-overlay {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(5,5,5,0.3) 0%, var(--obsidian-deep) 75%);
+    z-index: 1;
+  }
+  .scene-content {
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    max-width: min(900px, 90vw);
+    padding: 2rem;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     KINETIC TYPOGRAPHY
+     ═══════════════════════════════════════════════════════ */
+  .kine-label {
+    font-size: clamp(0.6rem, 1.2vw, 0.8rem);
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: var(--volt);
+    margin-bottom: 1rem;
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  .scene.active .kine-label {
+    animation: slide-up 0.6s var(--ease-snap) 0.3s forwards;
+  }
+
+  .kine-headline {
+    font-size: clamp(2rem, 7vw, 5.5rem);
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+    position: relative;
+  }
+  .scene.active .kine-headline {
+    animation: snap-in 0.7s var(--ease-impact) 0.5s forwards;
+  }
+
+  .kine-sub {
+    font-family: var(--font-mono);
+    font-size: clamp(0.65rem, 1.4vw, 0.95rem);
+    letter-spacing: 0.15em;
+    color: var(--white-50);
+    text-transform: uppercase;
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  .scene.active .kine-sub {
+    animation: slide-up 0.5s var(--ease-snap) 0.9s forwards;
+  }
+
+  .text-volt { color: var(--volt); }
+  .text-flame { color: var(--flame); }
+  .text-chrome { color: var(--chrome-light); }
+  .text-gradient {
+    background: linear-gradient(135deg, var(--volt) 0%, var(--flame) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Split time counter */
+  .split-time {
+    font-family: var(--font-mono);
+    font-size: clamp(3rem, 10vw, 8rem);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: var(--volt);
+    text-shadow: 0 0 60px var(--volt-glow), 0 0 120px var(--volt-glow);
+    opacity: 0;
+    transform: scale(0.5);
+    filter: drop-shadow(0 0 4px var(--volt)) drop-shadow(0 0 16px var(--volt-glow)) drop-shadow(0 0 64px rgba(229,249,0,0.15));
+    transition: filter 0.1s;
+  }
+  .scene.active .split-time {
+    animation: counter-snap 0.4s var(--ease-snap) 0.6s forwards;
+  }
+
+  .record-flash {
+    display: inline-block;
+    padding: 0.25em 0.6em;
+    border: 2px solid var(--flame);
+    font-family: var(--font-mono);
+    font-size: clamp(0.7rem, 1.5vw, 1rem);
+    letter-spacing: 0.2em;
+    color: var(--flame);
+    margin-top: 1rem;
+    opacity: 0;
+    transform: scaleX(0);
+    text-shadow: 0 0 10px var(--flame-glow);
+  }
+  .scene.active .record-flash {
+    animation: flash-in 0.5s var(--ease-snap) 1.2s forwards;
+  }
+
+  /* Logo lockup */
+  .logo-lockup {
+    opacity: 0;
+    transform: translateY(30px) scale(0.8);
+  }
+  .scene.active .logo-lockup {
+    animation: logo-arrive 1s var(--ease-snap) 0.4s forwards;
+  }
+  .logo-lockup svg {
+    width: min(220px, 45vw);
+    height: auto;
+    filter:
+      drop-shadow(0 0 8px rgba(255,69,0,0.6))
+      drop-shadow(0 0 30px var(--flame-glow))
+      drop-shadow(0 0 60px rgba(229,249,0,0.2));
+  }
+  .scene.active .logo-lockup svg {
+    animation: logo-glow-pulse 2s ease-in-out 1.5s infinite alternate;
+  }
+  @keyframes logo-glow-pulse {
+    0% { filter: drop-shadow(0 0 8px rgba(255,69,0,0.6)) drop-shadow(0 0 30px var(--flame-glow)) drop-shadow(0 0 60px rgba(229,249,0,0.2)); }
+    100% { filter: drop-shadow(0 0 12px rgba(255,69,0,0.9)) drop-shadow(0 0 50px var(--flame-glow)) drop-shadow(0 0 100px rgba(229,249,0,0.4)); }
+  }
+  .forever-faster {
+    font-size: clamp(2.5rem, 8vw, 6rem);
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-top: 1.5rem;
+    opacity: 0;
+    transform: translateY(20px);
+    background: linear-gradient(90deg, var(--white) 0%, var(--chrome) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .scene.active .forever-faster {
+    animation: snap-in 0.6s var(--ease-snap) 1.2s forwards;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     TRANSITION EFFECTS
+     ═══════════════════════════════════════════════════════ */
+  .transition-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .trans-whip {
+    background: linear-gradient(90deg, transparent 0%, var(--obsidian-deep) 30%, var(--obsidian-deep) 70%, transparent 100%);
+  }
+  .trans-whip.active { animation: whip-pan 0.5s var(--ease-snap) forwards; }
+  .trans-morph {
+    background: radial-gradient(circle at center, var(--obsidian-deep) 0%, transparent 70%);
+  }
+  .trans-morph.active { animation: morph-zoom 0.6s var(--ease-snap) forwards; }
+  .trans-blur {
+    background: linear-gradient(180deg, transparent 0%, var(--obsidian-deep) 40%, var(--obsidian-deep) 60%, transparent 100%);
+  }
+  .trans-blur.active { animation: blur-swipe 0.5s var(--ease-snap) forwards; }
+  .trans-vortex {
+    background: radial-gradient(circle at center, var(--flame) 0%, var(--volt) 20%, var(--obsidian-deep) 50%, transparent 70%);
+  }
+  .trans-vortex.active { animation: vortex-collapse 0.7s var(--ease-snap) forwards; }
+
+  @keyframes whip-pan {
+    0% { opacity: 0; transform: translateX(-100%); }
+    40% { opacity: 1; }
+    60% { opacity: 1; }
+    100% { opacity: 0; transform: translateX(100%); }
+  }
+  @keyframes morph-zoom {
+    0% { opacity: 0; transform: scale(3); }
+    50% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.5); }
+  }
+  @keyframes blur-swipe {
+    0% { opacity: 0; transform: translateY(-100%); }
+    40% { opacity: 1; }
+    60% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(100%); }
+  }
+  @keyframes vortex-collapse {
+    0% { opacity: 0; transform: scale(5) rotate(0deg); }
+    50% { opacity: 1; transform: scale(1) rotate(180deg); }
+    100% { opacity: 0; transform: scale(0) rotate(360deg); }
+  }
+
+  /* Flash frame */
+  .flash-frame {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    pointer-events: none;
+    background: var(--white);
+    opacity: 0;
+  }
+  .flash-frame.active { animation: flash-burst 0.3s ease-out forwards; }
+  @keyframes flash-burst {
+    0% { opacity: 0.7; }
+    100% { opacity: 0; }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     HUD / TIMELINE
+     ═══════════════════════════════════════════════════════ */
+  #hud {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(to top, rgba(5,5,5,0.95) 0%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .timeline-bar {
+    width: 100%;
+    height: 3px;
+    background: var(--white-10);
+    border-radius: 2px;
+    position: relative;
+    overflow: visible;
+    cursor: pointer;
+  }
+  .timeline-bar:hover { height: 5px; }
+  .timeline-progress {
+    height: 100%;
+    background: linear-gradient(90deg, var(--volt), var(--flame));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 8px var(--volt-glow);
+    position: relative;
+  }
+  .timeline-progress::after {
+    content: '';
+    position: absolute;
+    right: -4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--volt);
+    box-shadow: 0 0 10px var(--volt-glow);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .timeline-bar:hover .timeline-progress::after { opacity: 1; }
+  .timeline-markers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .timeline-marker {
+    position: absolute;
+    top: -8px;
+    width: 2px;
+    height: 18px;
+    background: var(--white-20);
+    transform: translateX(-1px);
+  }
+  .timeline-marker::after {
+    content: attr(data-label);
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--white-50);
+    white-space: nowrap;
+  }
+  .timeline-marker.active { background: var(--volt); }
+  .timeline-marker.active::after { color: var(--volt); }
+
+  .hud-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: clamp(0.55rem, 1vw, 0.7rem);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--white-50);
+  }
+  .hud-time {
+    font-family: var(--font-mono);
+    color: var(--volt);
+    font-size: clamp(0.7rem, 1.2vw, 0.85rem);
+  }
+  .hud-audio {
+    font-size: clamp(0.5rem, 0.9vw, 0.6rem);
+    color: var(--flame);
+    opacity: 0.7;
+    max-width: 40%;
+    text-align: right;
+    line-height: 1.4;
+  }
+  .hud-scene-label {
+    color: var(--white);
+    font-weight: 600;
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     CONTROLS
+     ═══════════════════════════════════════════════════════ */
+  #controls {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 100;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .ctrl-btn {
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--white-20);
+    border-radius: 50%;
+    background: rgba(11,11,11,0.8);
+    color: var(--white);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s;
+    backdrop-filter: blur(10px);
+  }
+  .ctrl-btn:hover { border-color: var(--volt); background: rgba(229,249,0,0.1); transform: scale(1.08); }
+  .ctrl-btn:active { transform: scale(0.95); }
+  .ctrl-btn:focus-visible { outline: 2px solid var(--volt); outline-offset: 2px; }
+  .ctrl-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+  .speed-badge {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--volt);
+    letter-spacing: 0.05em;
+    padding: 0.2em 0.5em;
+    border: 1px solid var(--volt);
+    border-radius: 3px;
+    cursor: pointer;
+    background: rgba(229,249,0,0.05);
+    transition: background 0.2s;
+    user-select: none;
+    line-height: 1;
+  }
+  .speed-badge:hover { background: rgba(229,249,0,0.15); }
+
+  /* ═══════════════════════════════════════════════════════
+     SCENE DOTS
+     ═══════════════════════════════════════════════════════ */
+  #scene-dots {
+    position: fixed;
+    right: 1.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .scene-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--white-20);
+    border: 1px solid var(--white-20);
+    cursor: pointer;
+    transition: all 0.3s var(--ease-snap);
+    position: relative;
+  }
+  .scene-dot.active {
+    background: var(--volt);
+    border-color: var(--volt);
+    box-shadow: 0 0 12px var(--volt-glow);
+    transform: scale(1.4);
+  }
+  .scene-dot:hover:not(.active) {
+    background: var(--white-50);
+    transform: scale(1.2);
+  }
+  .scene-dot::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--white-50);
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .scene-dot:hover::before { opacity: 1; }
+
+  /* ═══════════════════════════════════════════════════════
+     OVERLAYS
+     ═══════════════════════════════════════════════════════ */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  }
+  .vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 7;
+    pointer-events: none;
+    box-shadow: inset 0 0 150px 60px rgba(0,0,0,0.6);
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     CORE ANIMATIONS
+     ═══════════════════════════════════════════════════════ */
+  @keyframes slide-up {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes snap-in {
+    0% { opacity: 0; transform: translateY(40px) scale(0.95); }
+    60% { opacity: 1; transform: translateY(-5px) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes counter-snap {
+    0% { opacity: 0; transform: scale(0.5); }
+    60% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes flash-in {
+    0% { opacity: 0; transform: scaleX(0); }
+    60% { opacity: 1; transform: scaleX(1.05); }
+    100% { opacity: 1; transform: scaleX(1); }
+  }
+  @keyframes logo-arrive {
+    0% { opacity: 0; transform: translateY(30px) scale(0.8); }
+    70% { opacity: 1; transform: translateY(-5px) scale(1.02); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     SCENE-SPECIFIC EFFECTS
+     ═══════════════════════════════════════════════════════ */
+  /* Scene 1: Formstrip sweep */
+  .formstrip-line {
+    position: absolute;
+    bottom: 30%;
+    left: 10%;
+    width: 80%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--volt), transparent);
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+    z-index: 1;
+  }
+  .scene.active .formstrip-line {
+    animation: formstrip-sweep 1.5s var(--ease-snap) 0.8s forwards;
+  }
+  @keyframes formstrip-sweep {
+    0% { opacity: 0; transform: scaleX(0); }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; transform: scaleX(1); }
+  }
+
+  /* Scene 2: Blueprint grid */
+  .blueprint-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(229,249,0,0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(229,249,0,0.12) 1px, transparent 1px);
+    background-size: 60px 60px;
+    opacity: 0;
+    z-index: 1;
+  }
+  .scene.active .blueprint-grid {
+    animation: grid-fade 3s ease 0.3s forwards;
+  }
+  @keyframes grid-fade {
+    0% { opacity: 0; }
+    30% { opacity: 0.1; }
+    100% { opacity: 0.04; }
+  }
+
+  /* Scene 3: Speed lines */
+  .speed-lines {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: hidden;
+  }
+  .speed-line {
+    position: absolute;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--volt), transparent);
+    opacity: 0;
+  }
+  .scene.active .speed-line {
+    animation: speed-streak 0.8s var(--ease-snap) forwards;
+  }
+  @keyframes speed-streak {
+    0% { opacity: 0; transform: translateX(-100%); }
+    50% { opacity: 0.5; }
+    100% { opacity: 0; transform: translateX(100%); }
+  }
+
+  /* Scene 4: Aero rings */
+  .aero-ring {
+    position: absolute;
+    width: min(500px, 80vw);
+    height: min(500px, 80vw);
+    border: 1px solid var(--volt);
+    border-radius: 50%;
+    opacity: 0;
+    z-index: 1;
+  }
+  .scene.active .aero-ring {
+    animation: ring-spin 8s linear infinite, ring-appear 1s ease 0.5s forwards;
+  }
+  .aero-ring:nth-child(3) {
+    width: min(400px, 65vw);
+    height: min(400px, 65vw);
+    border-color: var(--flame);
+    animation-direction: reverse;
+  }
+  .aero-ring:nth-child(4) {
+    width: min(300px, 50vw);
+    height: min(300px, 50vw);
+    border-color: var(--chrome);
+    border-style: dashed;
+  }
+  @keyframes ring-spin { to { transform: rotate(360deg); } }
+  @keyframes ring-appear { to { opacity: 0.15; } }
+
+  /* Scene 5: Energy convergence */
+  .energy-convergence {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: conic-gradient(from var(--glow-angle), transparent 0%, var(--flame-glow) 10%, transparent 20%);
+    opacity: 0;
+  }
+  .scene.active .energy-convergence {
+    animation: energy-spin 4s linear infinite, ring-appear 1s ease 0.3s forwards;
+  }
+  @keyframes energy-spin { to { --glow-angle: 360deg; } }
+
+  /* ═══════════════════════════════════════════════════════
+     REDUCED MOTION
+     ═══════════════════════════════════════════════════════ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .scene-bg { transition: none !important; }
+    .scene.active .kine-headline,
+    .scene.active .kine-label,
+    .scene.active .kine-sub,
+    .scene.active .split-time,
+    .scene.active .record-flash,
+    .scene.active .logo-lockup,
+    .scene.active .forever-faster {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════════
+     RESPONSIVE
+     ═══════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    #scene-dots { display: none; }
+    #controls { top: 1rem; right: 1rem; }
+    .ctrl-btn { width: 36px; height: 36px; }
+    #hud { padding: 0.75rem 1rem; }
+    .hud-audio { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PRELOADER -->
+<div id="preloader">
+  <div class="preloader-text">PUMA: Pure Athletics — Loading Pre-Viz</div>
+  <div class="preloader-bar"><div class="preloader-bar-fill"></div></div>
+</div>
+
+<!-- STAGE -->
+<div id="stage">
+  <canvas id="particles"></canvas>
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+
+  <!-- Transitions -->
+  <div class="transition-overlay trans-whip" id="trans-whip"></div>
+  <div class="transition-overlay trans-morph" id="trans-morph"></div>
+  <div class="transition-overlay trans-blur" id="trans-blur"></div>
+  <div class="transition-overlay trans-vortex" id="trans-vortex"></div>
+  <div class="flash-frame" id="flash-frame"></div>
+
+  <!-- SCENE 1: The Ignition -->
+  <div class="scene" id="scene-1">
+    <div class="scene-bg" id="scene1-bg"></div>
+    <div class="scene-overlay"></div>
+    <div class="formstrip-line"></div>
+    <div class="scene-content">
+      <p class="kine-label">Scene 01 — The Ignition</p>
+      <h1 class="kine-headline">
+        <span class="text-chrome">Born in</span><br>
+        <span class="text-volt">Herzogenaurach.</span><br>
+        <span class="text-chrome">Built for</span><br>
+        <span class="text-gradient">Velocity.</span>
+      </h1>
+      <p class="kine-sub">The Formstrip // The Foundation of Pure Speed</p>
+    </div>
+  </div>
+
+  <!-- SCENE 2: NITRO Deconstruction -->
+  <div class="scene" id="scene-2">
+    <div class="scene-bg" id="scene2-bg"></div>
+    <div class="scene-overlay"></div>
+    <div class="blueprint-grid"></div>
+    <div class="scene-content">
+      <p class="kine-label">Scene 02 — Carbon Deconstruction</p>
+      <h1 class="kine-headline">
+        <span class="text-volt">Nitrofoam™</span><br>
+        <span class="text-chrome">Elite</span>
+      </h1>
+      <p class="kine-sub">Unfiltered Energy Return // PWRPLATE Carbon Fiber // Ultraweave</p>
+    </div>
+  </div>
+
+  <!-- SCENE 3: World Records -->
+  <div class="scene" id="scene-3">
+    <div class="scene-bg" id="scene3-bg"></div>
+    <div class="scene-overlay"></div>
+    <div class="speed-lines" id="speed-lines"></div>
+    <div class="scene-content">
+      <p class="kine-label">Scene 03 — Hall of World Records</p>
+      <div class="split-time" id="split-counter">09.58</div>
+      <h1 class="kine-headline" style="font-size: clamp(1.5rem, 5vw, 3.5rem); margin-top: 0.5rem;">
+        <span class="text-chrome">World Records //</span><br>
+        <span class="text-flame">Immortal Speed</span>
+      </h1>
+      <div class="record-flash">WORLD RECORD</div>
+    </div>
+  </div>
+
+  <!-- SCENE 4: Wind Tunnel -->
+  <div class="scene" id="scene-4">
+    <div class="scene-bg" id="scene4-bg"></div>
+    <div class="scene-overlay"></div>
+    <div class="aero-ring"></div>
+    <div class="aero-ring"></div>
+    <div class="aero-ring"></div>
+    <div class="scene-content">
+      <p class="kine-label">Scene 04 — The Pursuit</p>
+      <h1 class="kine-headline">
+        <span class="text-chrome">Engineered to</span><br>
+        <span class="text-gradient">Outrun Time.</span>
+      </h1>
+      <p class="kine-sub">Aerodynamic Mastery // Hundredths of a Second</p>
+    </div>
+  </div>
+
+  <!-- SCENE 5: Forever Faster -->
+  <div class="scene" id="scene-5">
+    <div class="scene-bg" id="scene5-bg"></div>
+    <div class="scene-overlay"></div>
+    <div class="energy-convergence"></div>
+    <div class="scene-content">
+      <div class="logo-lockup">
+        <svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Puma leaping cat logo">
+          <defs>
+            <linearGradient id="chrome-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#E8E8E8"/>
+              <stop offset="50%" style="stop-color:#C0C0C0"/>
+              <stop offset="100%" style="stop-color:#888"/>
+            </linearGradient>
+            <linearGradient id="energy-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style="stop-color:#E5F900"/>
+              <stop offset="100%" style="stop-color:#FF4500"/>
+            </linearGradient>
+          </defs>
+          <path d="M20,100 Q25,85 35,75 Q50,60 55,50 Q58,44 65,38 Q75,28 90,22 Q100,18 110,20 Q115,21 118,25 Q120,30 116,35 Q110,42 105,45 Q100,48 95,55 Q92,60 95,65 Q100,72 110,75 Q120,76 135,72 Q150,66 160,55 Q165,48 170,38 Q175,28 185,22 Q188,20 190,22 Q192,25 188,32 Q182,45 175,55 Q168,62 165,68 Q162,75 160,85 Q158,95 155,100 L20,100 Z" fill="url(#chrome-grad)" opacity="0.9"/>
+          <path d="M20,100 Q25,85 35,75 Q50,60 55,50 Q58,44 65,38 Q75,28 90,22" fill="none" stroke="url(#energy-grad)" stroke-width="2" opacity="0.6" stroke-dasharray="5 8"/>
+        </svg>
+        <div class="forever-faster" data-scramble="FOREVER FASTER.">Forever Faster.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENE DOTS -->
+<nav id="scene-dots" aria-label="Scene navigation">
+  <button class="scene-dot active" data-scene="1" data-tooltip="Ignition" aria-label="Scene 1: The Ignition"></button>
+  <button class="scene-dot" data-scene="2" data-tooltip="NITRO" aria-label="Scene 2: NITRO Deconstruction"></button>
+  <button class="scene-dot" data-scene="3" data-tooltip="Records" aria-label="Scene 3: World Records"></button>
+  <button class="scene-dot" data-scene="4" data-tooltip="Pursuit" aria-label="Scene 4: Wind Tunnel"></button>
+  <button class="scene-dot" data-scene="5" data-tooltip="Finale" aria-label="Scene 5: Forever Faster"></button>
+</nav>
+
+<!-- CONTROLS -->
+<div id="controls">
+  <button class="ctrl-btn" id="btn-prev" aria-label="Previous scene">
+    <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+  </button>
+  <button class="ctrl-btn" id="btn-play" aria-label="Play/Pause">
+    <svg viewBox="0 0 24 24" id="icon-play"><path d="M8 5v14l11-7z"/></svg>
+    <svg viewBox="0 0 24 24" id="icon-pause" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+  </button>
+  <button class="ctrl-btn" id="btn-next" aria-label="Next scene">
+    <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+  </button>
+  <span class="speed-badge" id="speed-badge" title="Click to change playback speed" role="button" tabindex="0">1×</span>
+</div>
+
+<!-- HUD / TIMELINE -->
+<div id="hud">
+  <div class="timeline-bar" id="timeline-bar">
+    <div class="timeline-progress" id="timeline-progress"></div>
+    <div class="timeline-markers">
+      <div class="timeline-marker active" style="left: 0%" data-label="Ignition"></div>
+      <div class="timeline-marker" style="left: 16.7%" data-label="NITRO"></div>
+      <div class="timeline-marker" style="left: 36.7%" data-label="Records"></div>
+      <div class="timeline-marker" style="left: 63.3%" data-label="Pursuit"></div>
+      <div class="timeline-marker" style="left: 83.3%" data-label="Finale"></div>
+    </div>
+  </div>
+  <div class="hud-info">
+    <span><span class="hud-scene-label" id="hud-scene">Scene 01</span> — <span id="hud-title">The Ignition & The Formstrip</span></span>
+    <span class="hud-time" id="hud-time">00:00 / 01:00</span>
+    <span class="hud-audio" id="hud-audio">Sub-bass drone • Heartbeat • Starter gun</span>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const SCENES = [
+    { id: 1, start: 0, end: 10, title: 'The Ignition & The Formstrip', transition: 'trans-whip', audio: 'Sub-bass drone • Heartbeat • Starter gun reverb' },
+    { id: 2, start: 10, end: 22, title: 'NITRO™ & Carbon Deconstruction', transition: 'trans-morph', audio: 'Digital clicks • Pneumatic hiss • Metallic snap' },
+    { id: 3, start: 22, end: 38, title: 'The Hall of World Records', transition: 'trans-blur', audio: '130 BPM synth • Stadium crowd • Wind whoosh' },
+    { id: 4, start: 38, end: 50, title: 'The Pursuit of Hundredths', transition: 'trans-vortex', audio: 'Ticking clock • Heavy breathing • Pitch riser' },
+    { id: 5, start: 50, end: 60, title: 'Forever Faster — Finale', transition: null, audio: 'Sub-boom drop • Electric sizzle • Silent release' }
+  ];
+
+  const TOTAL_DURATION = 60;
+  const SPEED_OPTIONS = [1, 1.5, 2, 3, 0.5];
+  let speedIdx = 0;
+  let speedMultiplier = 1;
+  let currentScene = 0;
+  let elapsed = 0;
+  let isPlaying = false;
+  let lastTimestamp = null;
+  let animFrameId = null;
+  let splitInterval = null;
+
+  // DOM
+  const $ = id => document.getElementById(id);
+  const preloader = $('preloader');
+  const scenes = document.querySelectorAll('.scene');
+  const dots = document.querySelectorAll('.scene-dot');
+  const markers = document.querySelectorAll('.timeline-marker');
+  const progress = $('timeline-progress');
+  const timelineBar = $('timeline-bar');
+  const hudScene = $('hud-scene');
+  const hudTitle = $('hud-title');
+  const hudTime = $('hud-time');
+  const hudAudio = $('hud-audio');
+  const btnPlay = $('btn-play');
+  const iconPlay = $('icon-play');
+  const iconPause = $('icon-pause');
+  const speedBadge = $('speed-badge');
+  const flashFrame = $('flash-frame');
+
+  // ── PARTICLE ENGINE (Object-Pooled, Additive Blending) ──
+  const canvas = $('particles');
+  const ctx = canvas.getContext('2d', { alpha: true });
+  const MAX_P = 120;
+  const pool = new Float32Array(MAX_P * 7); // x,y,vx,vy,life,maxLife,colorIdx
+  const COLORS = ['#E5F900', '#FF4500', '#C0C0C0', '#FFFFFF'];
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+
+  function spawnP(i) {
+    const o = i * 7;
+    pool[o] = Math.random() * canvas.width;
+    pool[o+1] = Math.random() * canvas.height;
+    pool[o+2] = (Math.random() - 0.5) * 2;
+    pool[o+3] = (Math.random() - 0.5) * 2;
+    pool[o+4] = 1.0;
+    pool[o+5] = 80 + Math.random() * 160;
+    pool[o+6] = Math.floor(Math.random() * COLORS.length);
+  }
+
+  function burst(cx, cy, count) {
+    let s = 0;
+    for (let i = 0; i < MAX_P && s < count; i++) {
+      const o = i * 7;
+      if (pool[o+4] <= 0) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 3 + Math.random() * 10;
+        pool[o] = cx; pool[o+1] = cy;
+        pool[o+2] = Math.cos(a) * sp;
+        pool[o+3] = Math.sin(a) * sp;
+        pool[o+4] = 1.0;
+        pool[o+5] = 25 + Math.random() * 35;
+        pool[o+6] = Math.floor(Math.random() * COLORS.length);
+        s++;
+      }
+    }
+  }
+
+  function drawParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < MAX_P; i++) {
+      const o = i * 7;
+      if (pool[o+4] > 0) {
+        pool[o] += pool[o+2]; pool[o+1] += pool[o+3];
+        pool[o+2] *= 0.98; pool[o+3] *= 0.98;
+        pool[o+4] -= 1 / pool[o+5];
+        const life = Math.max(0, pool[o+4]);
+        if (pool[o] < -10 || pool[o] > canvas.width+10 || pool[o+1] < -10 || pool[o+1] > canvas.height+10) { pool[o+4] = 0; spawnP(i); continue; }
+        ctx.globalAlpha = life * 0.35;
+        ctx.fillStyle = COLORS[pool[o+6]];
+        ctx.beginPath();
+        ctx.arc(pool[o], pool[o+1], life * 2.5 + 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else { spawnP(i); }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  // ── TELEMETRY SCRAMBLE ──
+  const GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$@%&!';
+  function scrambleText(el) {
+    const target = el.dataset.scramble || el.textContent.trim();
+    if (!target) return;
+    el.textContent = '';
+    [...target].forEach((ch, idx) => {
+      const span = document.createElement('span');
+      span.style.display = 'inline-block';
+      span.textContent = ch === ' ' ? '\u00A0' : ch;
+      el.appendChild(span);
+      if (ch === ' ') return;
+      let cycles = 0;
+      const max = 4 + idx * 2;
+      const iv = setInterval(() => {
+        if (cycles >= max) { span.textContent = ch; clearInterval(iv); }
+        else { span.textContent = GLYPHS[Math.floor(Math.random() * GLYPHS.length)]; cycles++; }
+      }, 40);
+    });
+  }
+
+  // ── SPEED LINES ──
+  function genSpeedLines() {
+    const c = $('speed-lines'); if (!c) return;
+    c.innerHTML = '';
+    for (let i = 0; i < 12; i++) {
+      const l = document.createElement('div');
+      l.className = 'speed-line';
+      l.style.top = `${10 + Math.random()*80}%`;
+      l.style.width = `${30 + Math.random()*50}%`;
+      l.style.animationDelay = `${0.5 + i*0.15}s`;
+      c.appendChild(l);
+    }
+  }
+
+  // ── SCENE MANAGEMENT ──
+  function showScene(index, withTrans = true) {
+    const prev = currentScene;
+    currentScene = index;
+
+    if (withTrans && prev !== index) {
+      flashFrame.classList.remove('active');
+      void flashFrame.offsetWidth;
+      flashFrame.classList.add('active');
+      setTimeout(() => flashFrame.classList.remove('active'), 400);
+
+      if (SCENES[prev] && SCENES[prev].transition) {
+        const t = $(SCENES[prev].transition);
+        if (t) { t.classList.remove('active'); void t.offsetWidth; t.classList.add('active'); setTimeout(() => t.classList.remove('active'), 700); }
+      }
+      burst(canvas.width/2, canvas.height/2, 40);
+    }
+
+    scenes.forEach((s, i) => s.classList.toggle('active', i === index));
+    dots.forEach((d, i) => d.classList.toggle('active', i === index));
+    markers.forEach((m, i) => m.classList.toggle('active', i === index));
+
+    const scene = SCENES[index];
+    hudScene.textContent = `Scene 0${scene.id}`;
+    hudTitle.textContent = scene.title;
+    hudAudio.textContent = scene.audio;
+
+    if (index === 2) { animateSplit(); genSpeedLines(); }
+    if (index === 4) {
+      const ff = document.querySelector('.forever-faster');
+      if (ff) setTimeout(() => scrambleText(ff), 1200);
+    }
+  }
+
+  function animateSplit() {
+    if (splitInterval) clearInterval(splitInterval);
+    const c = $('split-counter');
+    const times = ['10.49','10.20','09.92','09.75','09.58'];
+    let i = 0; c.textContent = times[0];
+    splitInterval = setInterval(() => {
+      i++;
+      if (i < times.length) {
+        c.textContent = times[i];
+        c.style.filter = 'brightness(2)';
+        setTimeout(() => c.style.filter = '', 100);
+      } else { clearInterval(splitInterval); splitInterval = null; }
+    }, 600);
+  }
+
+  // ── PLAYBACK ──
+  function updateTimeline() {
+    progress.style.width = Math.min((elapsed/TOTAL_DURATION)*100, 100) + '%';
+    hudTime.textContent = `${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(Math.floor(elapsed%60)).padStart(2,'0')} / 01:00`;
+    for (let i = SCENES.length - 1; i >= 0; i--) {
+      if (elapsed >= SCENES[i].start) { if (i !== currentScene) showScene(i); break; }
+    }
+  }
+
+  function tick(ts) {
+    if (!isPlaying) return;
+    if (lastTimestamp === null) lastTimestamp = ts;
+    elapsed = Math.min(elapsed + (ts - lastTimestamp)/1000 * speedMultiplier, TOTAL_DURATION);
+    lastTimestamp = ts;
+    updateTimeline();
+    drawParticles();
+    if (elapsed >= TOTAL_DURATION) { pause(); elapsed = 0; showScene(0, false); updateTimeline(); return; }
+    animFrameId = requestAnimationFrame(tick);
+  }
+
+  function play() {
+    if (elapsed >= TOTAL_DURATION) { elapsed = 0; showScene(0, false); }
+    isPlaying = true; lastTimestamp = null;
+    iconPlay.style.display = 'none'; iconPause.style.display = 'block';
+    animFrameId = requestAnimationFrame(tick);
+  }
+  function pause() {
+    isPlaying = false; lastTimestamp = null;
+    iconPlay.style.display = 'block'; iconPause.style.display = 'none';
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+  }
+  function goToScene(idx) {
+    elapsed = SCENES[idx].start;
+    showScene(idx, true);
+    updateTimeline();
+  }
+
+  // Idle particle loop
+  function idleLoop() { if (!isPlaying) drawParticles(); requestAnimationFrame(idleLoop); }
+
+  // ── EVENTS ──
+  btnPlay.addEventListener('click', () => isPlaying ? pause() : play());
+  $('btn-prev').addEventListener('click', () => goToScene(Math.max(0, currentScene-1)));
+  $('btn-next').addEventListener('click', () => goToScene(Math.min(SCENES.length-1, currentScene+1)));
+  speedBadge.addEventListener('click', () => {
+    speedIdx = (speedIdx+1) % SPEED_OPTIONS.length;
+    speedMultiplier = SPEED_OPTIONS[speedIdx];
+    speedBadge.textContent = speedMultiplier + '×';
+  });
+  timelineBar.addEventListener('click', e => {
+    const r = timelineBar.getBoundingClientRect();
+    elapsed = Math.max(0, Math.min(1, (e.clientX - r.left)/r.width)) * TOTAL_DURATION;
+    for (let i = SCENES.length-1; i >= 0; i--) { if (elapsed >= SCENES[i].start) { showScene(i, false); break; } }
+    updateTimeline();
+  });
+  dots.forEach(d => d.addEventListener('click', () => goToScene(parseInt(d.dataset.scene,10)-1)));
+
+  document.addEventListener('keydown', e => {
+    switch(e.key) {
+      case ' ': case 'k': e.preventDefault(); isPlaying ? pause() : play(); break;
+      case 'ArrowLeft': case 'j': e.preventDefault(); goToScene(Math.max(0, currentScene-1)); break;
+      case 'ArrowRight': case 'l': e.preventDefault(); goToScene(Math.min(SCENES.length-1, currentScene+1)); break;
+      case '1': case '2': case '3': case '4': case '5': e.preventDefault(); goToScene(parseInt(e.key,10)-1); break;
+      case '+': case '=': e.preventDefault(); speedIdx = (speedIdx+1)%SPEED_OPTIONS.length; speedMultiplier = SPEED_OPTIONS[speedIdx]; speedBadge.textContent = speedMultiplier+'×'; break;
+      case '-': e.preventDefault(); speedIdx = (speedIdx-1+SPEED_OPTIONS.length)%SPEED_OPTIONS.length; speedMultiplier = SPEED_OPTIONS[speedIdx]; speedBadge.textContent = speedMultiplier+'×'; break;
+    }
+  });
+  window.addEventListener('resize', resizeCanvas);
+
+  // ── INIT ──
+  async function init() {
+    resizeCanvas();
+    for (let i = 0; i < MAX_P; i++) spawnP(i);
+    showScene(0, false);
+    updateTimeline();
+    idleLoop();
+
+    // Preload images
+    await Promise.race([
+      Promise.all(['scene1.jpg','scene2.jpg','scene3.jpg','scene4.jpg','scene5.jpg'].map(s => new Promise(r => { const img = new Image(); img.onload = img.onerror = r; img.src = s; }))),
+      new Promise(r => setTimeout(r, 5000))
+    ]);
+
+    setTimeout(() => { preloader.classList.add('hidden'); setTimeout(play, 500); }, 800);
+  }
+
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', init) : init();
+})();
+</script>
+</body>
+</html>

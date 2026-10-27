@@ -81,6 +81,7 @@ def test_socket_accepts_supabase_subprotocol_auth(monkeypatch):
     class Socket:
         headers = {'sec-websocket-protocol': 'learnova, token'}
         cookies = {}
+        path_params = {'session_id': 'session-a'}
     monkeypatch.setattr(module.service, 'supabase_enabled', lambda: True)
     monkeypatch.setattr(module.service, 'consume_voice_ticket', lambda *_: None)
     monkeypatch.setattr(module.service, 'authenticate_bearer', lambda token: {'id': 'owner-a'} if token == 'token' else None)
@@ -127,6 +128,6 @@ def test_relay_does_not_forward_ungrounded_audio(monkeypatch):
                          model_turn=NS(parts=[NS(inline_data=NS(data=b'\0\0'))]), turn_complete=True)
             yield NS(tool_call=None, server_content=content)
     monkeypatch.setattr(module.service, 'add_message', lambda *args: pytest.fail('Ungrounded transcript persisted'))
-    asyncio.run(module.relay(Socket(), Provider(), 'session', 'owner', NS()))
+    asyncio.run(asyncio.wait_for(module.relay(Socket(), Provider(), 'session', 'owner', NS()), timeout=.5))
     assert not any(message['type'] == 'audio' for message in messages)
     assert any(message['type'] == 'error' for message in messages)
