@@ -198,7 +198,7 @@ def file_signed_url(session_id: str, file_id: str, account: User):
 @router.post('/sessions/{session_id}/analyze')
 def run_analysis(session_id: str, tasks: BackgroundTasks, account: User):
     existing = s.get_owned_session(session_id, account['id'])
-    if existing['status'] == 'PROCESSING':
+    if existing['status'] in {'PROCESSING', 'ANALYZING', 'INDEXING'}:
         raise HTTPException(409, 'Analysis is already running.')
     if existing['status'] == 'READY':
         return s.session_detail(session_id, account['id'])

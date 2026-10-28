@@ -153,7 +153,7 @@ def initialize():
         if 'byte_size' not in columns:
             db.execute('ALTER TABLE files ADD COLUMN byte_size INTEGER')
         # A process restart interrupts in-process analysis; never leave false progress.
-        db.execute("UPDATE sessions SET status='ERROR',error='Processing was interrupted. Analyze your material again.' WHERE status='PROCESSING'")
+        db.execute("UPDATE sessions SET status='ERROR',error='Processing was interrupted. Analyze your material again.' WHERE status IN ('PROCESSING','ANALYZING','INDEXING')")
 
 
 def authenticate_bearer(token):

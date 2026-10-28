@@ -1,10 +1,12 @@
 """Offline contract tests for the source-only authenticated learning journey."""
 import asyncio
 
+import pytest
+from fastapi import BackgroundTasks, HTTPException
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
-from backend.app.learning import service
+from backend.app.learning import router, service
 
 
 async def source_model(instruction, context):
@@ -93,3 +95,19 @@ def test_analysis_never_marks_failed_source_as_ready(monkeypatch, tmp_path):
         assert detail["status"] == "ERROR"
         assert detail["concepts"] == []
         assert "Unsupported file" in detail["files"][0]["error"]
+
+
+@pytest.mark.parametrize("status", ["PROCESSING", "ANALYZING", "INDEXING"])
+def test_analysis_cannot_be_started_twice_while_active(monkeypatch, status):
+    calls = []
+
+    async def track_analysis(session_id):
+        calls.append(session_id)
+
+    monkeypatch.setattr(router.s, "get_owned_session", lambda *_: {"status": status})
+    monkeypatch.setattr(router, "analyze", track_analysis)
+    with pytest.raises(HTTPException) as error:
+        router.run_analysis("session-id", BackgroundTasks(), {"id": "account-id"})
+
+    assert error.value.status_code == 409
+    assert calls == []
