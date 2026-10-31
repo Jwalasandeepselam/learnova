@@ -111,3 +111,34 @@ def test_analysis_cannot_be_started_twice_while_active(monkeypatch, status):
 
     assert error.value.status_code == 409
     assert calls == []
+
+
+@pytest.mark.parametrize("status", ["PROCESSING", "ANALYZING", "INDEXING"])
+def test_material_cannot_change_while_analysis_is_active(status):
+    with pytest.raises(HTTPException) as error:
+        router.reject_material_change_while_active({"status": status})
+
+    assert error.value.status_code == 409
+
+
+def test_analysis_job_claim_is_atomic(monkeypatch):
+    class Cursor:
+        rowcount = 0
+
+    class Database:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, query, params):
+            assert "status NOT IN" in query
+            assert params == ("session-id", "account-id")
+            return Cursor()
+
+    monkeypatch.setattr(router.s, "get_owned_session", lambda *_: {"status": "ERROR"})
+    monkeypatch.setattr(router.s, "database", Database)
+    tasks = BackgroundTasks()
+
+    with pytest.raises(HTTPException) as error:
+        router.run_analysis("session-id", tasks, {"id": "account-id"})
+
+    assert error.value.status_code == 409
+    assert tasks.tasks == []

@@ -16,6 +16,13 @@ from pydantic import BaseModel, Field
 from . import service as s
 from .processing import analyze, ingest, invalidate
 
+ACTIVE_ANALYSIS_STATUSES = frozenset({'PROCESSING', 'ANALYZING', 'INDEXING'})
+
+
+def reject_material_change_while_active(session):
+    if session['status'] in ACTIVE_ANALYSIS_STATUSES:
+        raise HTTPException(409, 'Wait for current processing to finish before changing material.')
+
 router = APIRouter(prefix='/api/v2', tags=['Learning'])
 
 
@@ -140,8 +147,7 @@ def delete_session(session_id: str, account: User):
 @router.post('/sessions/{session_id}/files')
 async def upload(session_id: str, tasks: BackgroundTasks, account: User, files: list[UploadFile] = File(...)):
     existing = s.get_owned_session(session_id, account['id'])
-    if existing['status'] == 'PROCESSING':
-        raise HTTPException(409, 'Wait for current processing to finish before changing material.')
+    reject_material_change_while_active(existing)
     with s.database() as db:
         count = db.execute('SELECT count(*) FROM files WHERE session_id=?', (session_id,)).fetchone()[0]
     if not files or len(files) + count > 20:
@@ -168,8 +174,7 @@ async def upload(session_id: str, tasks: BackgroundTasks, account: User, files: 
 @router.delete('/sessions/{session_id}/files/{file_id}')
 def remove_file(session_id: str, file_id: str, account: User):
     existing = s.get_owned_session(session_id, account['id'])
-    if existing['status'] == 'PROCESSING':
-        raise HTTPException(409, 'Wait for processing to finish before removing material.')
+    reject_material_change_while_active(existing)
     with s.database() as db:
         file_row = db.execute('SELECT storage_path FROM files WHERE id=? AND session_id=?', (file_id, session_id)).fetchone()
         if not file_row:
@@ -198,12 +203,18 @@ def file_signed_url(session_id: str, file_id: str, account: User):
 @router.post('/sessions/{session_id}/analyze')
 def run_analysis(session_id: str, tasks: BackgroundTasks, account: User):
     existing = s.get_owned_session(session_id, account['id'])
-    if existing['status'] in {'PROCESSING', 'ANALYZING', 'INDEXING'}:
+    if existing['status'] in ACTIVE_ANALYSIS_STATUSES:
         raise HTTPException(409, 'Analysis is already running.')
     if existing['status'] == 'READY':
         return s.session_detail(session_id, account['id'])
     with s.database() as db:
-        db.execute("UPDATE sessions SET status='PROCESSING',error=NULL WHERE id=?", (session_id,))
+        claimed = db.execute(
+            "UPDATE sessions SET status='PROCESSING',error=NULL "
+            "WHERE id=? AND user_id=? AND status NOT IN ('PROCESSING','ANALYZING','INDEXING','READY')",
+            (session_id, account['id']),
+        ).rowcount
+    if claimed != 1:
+        raise HTTPException(409, 'Analysis is already running.')
     tasks.add_task(analyze, session_id)
     return s.session_detail(session_id, account['id'])
 

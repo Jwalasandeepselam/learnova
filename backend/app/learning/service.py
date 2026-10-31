@@ -46,6 +46,8 @@ class DatabaseRow(dict):
 
 class PostgresCursor:
     def __init__(self, cursor): self.cursor = cursor
+    @property
+    def rowcount(self): return self.cursor.rowcount
     def fetchone(self):
         row = self.cursor.fetchone()
         return DatabaseRow(row) if row else None
