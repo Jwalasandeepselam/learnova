@@ -1,7 +1,7 @@
 export const API = `${(process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/v2`;
 export type Citation = { document_id: string; filename: string; page: number | null; text: string };
 export type Concept = { id: string; title: string; summary: string; source_ids: string[]; prerequisites: string[]; state: string; mastery: number | null };
-export type Session = { id: string; title: string; status: string; error?: string; files: {id:string; name:string; status:string; pages:number; error?:string}[]; concepts: Concept[]; messages: {role:string; content:string; citations?:Citation[]}[]; created_at:string };
+export type Session = { id: string; title: string; status: string; error?: string; files: {id:string; name:string; status:string; pages:number; error?:string}[]; concepts: Concept[]; messages: {id:number; role:string; content:string; citations?:Citation[]; feedback?:'helpful'|'unhelpful'}[]; created_at:string };
 export type Question = { id:string; prompt:string; type:string; options:string[]; difficulty:number|string; concept_id:string };
 export type Answer = { correct:boolean; score:number; feedback:string; explanation:string; difficulty:number|string; next_step:string; mastery:number|null };
 export type Report = {score:number; total:number; percentage:number; difficulty:number|string; strong:string[]; weak:string[]; next_step:string; answered:number; concepts:unknown[]};

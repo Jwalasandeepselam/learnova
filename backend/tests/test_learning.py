@@ -142,3 +142,48 @@ def test_analysis_job_claim_is_atomic(monkeypatch):
 
     assert error.value.status_code == 409
     assert tasks.tasks == []
+
+
+def test_rag_chat_works_before_concept_map_is_ready(monkeypatch):
+    source = {"id": "chunk-1", "document_id": "file-1", "filename": "lesson.pdf", "page": 3, "text": "Photosynthesis converts light energy into chemical energy."}
+    ids = iter((1, 2))
+
+    async def retrieve(*_): return [source]
+    async def tutor(*_): return {"message": "Photosynthesis stores light energy as chemical energy.", "source_ids": ["chunk-1"], "strategy": "simple"}
+
+    monkeypatch.setattr(router.s, "get_owned_session", lambda *_: {"status": "ERROR", "revision": 4})
+    monkeypatch.setattr(router.s, "concept_models", lambda *_: [])
+    monkeypatch.setattr(router.s, "session_detail", lambda *_: {"messages": []})
+    monkeypatch.setattr(router.s, "hybrid_retrieve", retrieve)
+    monkeypatch.setattr(router.s, "generate_json", tutor)
+    monkeypatch.setattr(router.s, "add_message", lambda *_: next(ids))
+
+    result = asyncio.run(router.chat("session-id", router.ChatInput(message="What is photosynthesis?"), {"id": "account-id"}))
+
+    assert result["message_id"] == 2
+    assert result["citations"][0]["page"] == 3
+
+
+def test_tutor_feedback_is_saved_only_for_assistant_message(monkeypatch):
+    writes = []
+
+    class Cursor:
+        def __init__(self, row=None): self.row = row
+        def fetchone(self): return self.row
+
+    class Database:
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, query, params):
+            if query.startswith("SELECT 1 FROM messages"):
+                return Cursor({"found": 1})
+            writes.append((query, params))
+            return Cursor()
+
+    monkeypatch.setattr(router.s, "get_owned_session", lambda *_: {"id": "session-id"})
+    monkeypatch.setattr(router.s, "database", Database)
+
+    result = router.message_feedback("session-id", 42, router.MessageFeedbackInput(rating="helpful"), {"id": "account-id"})
+
+    assert result == {"message_id": 42, "rating": "helpful"}
+    assert writes[0][1][0:2] == (42, "helpful")

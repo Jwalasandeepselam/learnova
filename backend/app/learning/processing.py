@@ -115,9 +115,14 @@ async def analyze(session_id):
             pass  # Source lexical retrieval remains available; report mode in session detail.
         # Analyze every chunk in bounded batches rather than silently truncating long documents.
         candidates = []
+        failed_batches = 0
         for offset in range(0, len(chunks), 24):
             batch = chunks[offset:offset + 24]
-            result = await s.generate_json('Extract the important concepts explicitly present in these sources. Return {"concepts":[{"title":"...","summary":"...","source_ids":["chunk id"],"prerequisites":["concept title"],"prerequisite_basis":"explicit|inferred","definitions":[],"formulas":[],"examples":[],"section":"...","importance":"foundational|advanced"}]}. Use real chunk IDs. Definitions, formulas, examples must be directly supported by these sources. Omit unsupported content. No generic fallback topics. At most 12 concepts per batch.', {'sources': batch})
+            try:
+                result = await s.generate_json('Extract the important concepts explicitly present in these sources. Return {"concepts":[{"title":"...","summary":"...","source_ids":["chunk id"],"prerequisites":["concept title"],"prerequisite_basis":"explicit|inferred","definitions":[],"formulas":[],"examples":[],"section":"...","importance":"foundational|advanced"}]}. Use real chunk IDs. Definitions, formulas, examples must be directly supported by these sources. Omit unsupported content. No generic fallback topics. At most 12 concepts per batch.', {'sources': batch})
+            except HTTPException:
+                failed_batches += 1
+                continue
             allowed = {c['id'] for c in batch}
             for item in result.get('concepts', []):
                 ids = [v for v in item.get('source_ids', []) if v in allowed]
@@ -134,6 +139,8 @@ async def analyze(session_id):
                 unique[key] = item
         if not unique:
             raise HTTPException(502, 'No source-supported concepts were returned. Retry analysis or upload clearer material.')
+        if failed_batches:
+            s.logger.warning('Concept analysis completed partially: %s batch(es) unavailable', failed_batches)
         with s.database() as db:
             current = db.execute('SELECT revision FROM sessions WHERE id=?', (session_id,)).fetchone()
             if not current or current['revision'] != revision:

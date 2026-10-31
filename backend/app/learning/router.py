@@ -231,13 +231,13 @@ def selected_concept(session_id, concept_id=None):
         if not found:
             raise HTTPException(404, 'Concept not found in this learning session.')
         return found
-    return next((c for c in concepts if c['state'] == 'IN_REVIEW'), None) or next((c for c in concepts if c['state'] != 'MASTERED'), None) or concepts[0]
+    return next((c for c in concepts if c['state'] == 'IN_REVIEW'), None) or next((c for c in concepts if c['state'] != 'MASTERED'), None) or (concepts[0] if concepts else None)
 
 
 @router.post('/sessions/{session_id}/chat')
 async def chat(session_id: str, body: ChatInput, account: User):
-    initial = s.require_ready(session_id, account['id'])
-    concept = selected_concept(session_id, body.concept_id)
+    initial = s.get_owned_session(session_id, account['id'])
+    concept = selected_concept(session_id, body.concept_id) or {'id': None, 'title': 'Uploaded material', 'summary': 'Answer directly from the most relevant retrieved passages.'}
     detail = s.session_detail(session_id, account['id'])
     sources = await s.hybrid_retrieve(session_id, body.message + ' ' + concept['title'] + ' ' + ' '.join(m['content'][:300] for m in detail['messages'][-2:]))
     if not sources:
@@ -249,10 +249,32 @@ async def chat(session_id: str, body: ChatInput, account: User):
     if s.get_owned_session(session_id, account['id'])['revision'] != initial['revision']:
         raise HTTPException(409, 'Your material changed. Retry with the updated session.')
     s.add_message(session_id, 'user', body.message)
-    s.add_message(session_id, 'assistant', result['message'], citations)
+    message_id = s.add_message(session_id, 'assistant', result['message'], citations)
+    if concept['id']:
+        with s.database() as db:
+            db.execute('UPDATE concepts SET introduced=TRUE WHERE id=?', (concept['id'],))
+    return {'message_id': message_id, 'message': result['message'], 'citations': citations, 'strategy': result.get('strategy', 'simple')}
+
+
+class MessageFeedbackInput(BaseModel):
+    rating: str
+    note: str | None = Field(default=None, max_length=1000)
+
+
+@router.post('/sessions/{session_id}/messages/{message_id}/feedback')
+def message_feedback(session_id: str, message_id: int, body: MessageFeedbackInput, account: User):
+    s.get_owned_session(session_id, account['id'])
+    if body.rating not in {'helpful', 'unhelpful'}:
+        raise HTTPException(422, 'Feedback must be helpful or unhelpful.')
     with s.database() as db:
-        db.execute('UPDATE concepts SET introduced=TRUE WHERE id=?', (concept['id'],))
-    return {'message': result['message'], 'citations': citations, 'strategy': result.get('strategy', 'simple')}
+        message = db.execute("SELECT 1 FROM messages WHERE id=? AND session_id=? AND role='assistant'", (message_id, session_id)).fetchone()
+        if not message:
+            raise HTTPException(404, 'Tutor response not found.')
+        db.execute(
+            'INSERT INTO message_feedback(message_id,rating,note,created_at) VALUES(?,?,?,?) ON CONFLICT(message_id) DO UPDATE SET rating=excluded.rating,note=excluded.note,created_at=excluded.created_at',
+            (message_id, body.rating, body.note, s.now()),
+        )
+    return {'message_id': message_id, 'rating': body.rating}
 
 
 class QuizInput(BaseModel):
